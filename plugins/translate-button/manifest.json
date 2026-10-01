@@ -1,0 +1,67 @@
+{
+  "manifestVersion": 1,
+  "id": "dev.tsukiro.translate",
+  "name": "翻译按钮",
+  "version": "1.0.0",
+  "description": "在聊天页工具栏加一个按钮，点击后调用 AI 翻译上一条消息。演示 UI 插槽 + 插件调 AI。",
+  "author": { "name": "Tsukiro" },
+  "license": "MIT",
+  "icon": "assets/icon.svg",
+  "minHostVersion": "0.1.0",
+  "hostApi": "^1.0.0",
+
+  "runtime": { "main": "index.js", "type": "module", "autoStart": true },
+
+  "permissions": [
+    { "name": "model.chat", "reason": "调用 AI 模型进行翻译（会消耗你的点数）" },
+    { "name": "ui", "reason": "显示翻译进度提示与结果对话框" }
+  ],
+
+  "config": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "title": "目标语言",
+          "default": "中文",
+          "enum": ["中文", "English", "日本語", "한국어"]
+        },
+        "tone": {
+          "type": "string",
+          "title": "翻译语气",
+          "default": "自然",
+          "enum": ["自然", "正式", "口语"]
+        }
+      }
+    },
+    "section": { "slot": "settings.sections", "title": "翻译插件" }
+  },
+
+  "provides": {
+    "ui": [
+      {
+        "slot": "chat.toolbar",
+        "id": "translate",
+        "type": "button",
+        "label": "翻译",
+        "icon": "lucide:languages",
+        "tooltip": "翻译上一条消息",
+        "order": 10,
+        "when": { "hasMessages": true, "isStreaming": false },
+        "onClick": { "event": "translate.clicked" },
+        "permissions": ["model.chat"]
+      }
+    ],
+    "pages": [
+      {
+        "id": "settings-preview",
+        "title": "翻译设置预览",
+        "entry": "pages/preview.html",
+        "presentation": "sheet",
+        "icon": "lucide:languages",
+        "permissions": ["ui"]
+      }
+    ]
+  }
+}

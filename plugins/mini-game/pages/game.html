@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--
+  内容安全策略由宿主在注入时强制覆盖，这里的声明只是为了让「用浏览器直接打开
+  调试」时行为接近真实环境。
+
+  关键点：connect-src 'none'
+  → 页面里的 fetch / XMLHttpRequest / WebSocket 全部被拦死。
+  → 插件要联网只能走 tsukiro.net.request（宿主白名单代理）。
+  这是「网络白名单」能真正生效的前提，见 docs/07-bridge-protocol.md §7。
+-->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'" />
+<title>猜数字</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 14px;
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 14px; line-height: 1.6;
+    display: flex; flex-direction: column; height: 100vh;
+  }
+  h3 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+  #log {
+    flex: 1; overflow-y: auto;
+    border: 1px solid rgba(128,128,128,.35); border-radius: 10px;
+    padding: 10px; background: rgba(128,128,128,.06);
+  }
+  #log p { margin: 0 0 8px; }
+  #log b { font-weight: 600; }
+  .me b { color: #3b82f6; }
+  .ai b { color: #a855f7; }
+  .sys { color: rgba(128,128,128,.9); font-size: 13px; }
+  .err b { color: #ef4444; }
+  .composer { display: flex; gap: 8px; margin-top: 10px; }
+  input {
+    flex: 1; padding: 9px 12px; font-size: 15px;
+    border: 1px solid rgba(128,128,128,.4); border-radius: 9px;
+    background: transparent; color: inherit;
+  }
+  button {
+    padding: 9px 16px; font-size: 15px; cursor: pointer;
+    border: 0; border-radius: 9px; background: #6366f1; color: #fff;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  .row button { flex: 1; background: rgba(128,128,128,.22); color: inherit; font-size: 13px; padding: 7px; }
+</style>
+</head>
+<body>
+
+<h3>猜数字（1–100）</h3>
+<div id="log"></div>
+
+<div class="composer">
+  <input id="q" inputmode="numeric" placeholder="输入你的猜测，例如 50" autocomplete="off" />
+  <button id="send">发送</button>
+</div>
+<div class="row">
+  <button id="newgame">重开一局</button>
+  <button id="hint">要个提示</button>
+</div>
+
+<script type="module">
+  const logEl = document.getElementById('log');
+  const inputEl = document.getElementById('q');
+  const sendEl = document.getElementById('send');
+
+  const TARGET = 42;          // 本轮答案（真实产品里应由 AI 自己「想」）
+  let history = [];
+
+  function say(who, text, cls = '') {
+    const p = document.createElement('p');
+    if (cls) p.className = cls;
+    const b = document.createElement('b');
+    b.textContent = who + '：';
+    p.appendChild(b);
+    p.appendChild(document.createTextNode(text));
+    logEl.appendChild(p);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function systemText(t) { say('系统', t, 'sys'); }
+
+  systemText('我已经想好了一个 1 到 100 之间的整数，开始猜吧。');
+
+  /** 统一走宿主原语调 AI —— 页面里没有任何 API Key，也没有网络权限。 */
+  async function askAi(prompt) {
+    const res = await tsukiro.model.chat({
+      messages: [
+        {
+          role: 'system',
+          content:
+            `你是猜数字游戏的裁判。正确答案是 ${TARGET}。` +
+            '玩家给出猜测时，只回答「大了」「小了」或「猜中了」，不要多说一个字。' +
+            '如果玩家在请求提示，回答「答案比它大」或「答案比它小」。',
+        },
+        ...history,
+        { role: 'user', content: prompt },
+      ],
+      stream: false,
+    });
+    history.push({ role: 'user', content: prompt });
+    history.push({ role: 'assistant', content: res.text });
+    return res.text;
+  }
+
+  async function submit() {
+    const value = inputEl.value.trim();
+    if (!value) return;
+
+    inputEl.value = '';
+    say('你', value, 'me');
+    sendEl.disabled = true;
+
+    try {
+      const reply = await askAi(value);
+      say('AI', reply, 'ai');
+      if (reply.includes('猜中')) {
+        systemText('你赢了！点「重开一局」再来。');
+      }
+    } catch (err) {
+      // 权限被撤销、余额不足、限流都会走到这里。
+      // 插件必须优雅降级，而不是白屏。
+      say('错误', `${err.code}：${err.message}`, 'err');
+      if (err.code === 'PERMISSION_DENIED' || err.code === 'PERMISSION_REVOKED') {
+        systemText('请在「设置 → 插件 → 猜数字 → 权限」中重新授予 model.chat。');
+      }
+    } finally {
+      sendEl.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  sendEl.addEventListener('click', submit);
+  inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+
+  document.getElementById('newgame').addEventListener('click', () => {
+    history = [];
+    logEl.innerHTML = '';
+    systemText('新的一局开始了，答案还是 1 到 100 之间的整数。');
+  });
+
+  document.getElementById('hint').addEventListener('click', async () => {
+    try {
+      say('AI', await askAi('给我一个提示'), 'ai');
+    } catch (err) {
+      say('错误', `${err.code}：${err.message}`, 'err');
+    }
+  });
+
+  inputEl.focus();
+</script>
+</body>
+</html>

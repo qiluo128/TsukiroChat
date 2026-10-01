@@ -1,0 +1,35 @@
+# 统一换行符为 LF。
+#
+# 为什么必须显式声明：Windows 上 git 默认 core.autocrlf=true，会把检出后的文本
+# 文件换成 CRLF，导致：
+#   1. 跨平台协作时整文件 diff 噪音
+#   2. 脚本（.mjs / .ps1 / .sh）在 Linux CI 上因 CRLF 而解析失败
+#      —— 尤其 shebang 行末尾多个 \r 会让内核找不到解释器
+#
+# 注意 .ps1 文件另外要求带 UTF-8 BOM：Windows PowerShell 5.1 会把无 BOM 的
+# UTF-8 当成 ANSI 读，中文字符串会被打乱并引发解析错误。BOM 属于文件内容，
+# 不受这里的换行符规则影响。
+* text=auto eol=lf
+
+# ── 二进制：不做任何转换 ──
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.jar binary
+*.so binary
+*.dll binary
+*.dylib binary
+*.node binary
+
+# ── GitHub 语言统计修正 ──
+# 插件里的 HTML 是宿主模板，不希望它压过 Dart 的占比
+plugins/**/pages/*.html linguist-documentation
+docs/** linguist-documentation

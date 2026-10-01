@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'" />
+<title>翻译设置预览</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 14px; font-family: system-ui, "Microsoft YaHei", sans-serif; font-size: 14px; }
+  h3 { margin: 0 0 10px; font-size: 15px; }
+  label { display: block; margin: 12px 0 4px; font-size: 13px; opacity: .8; }
+  select, input {
+    width: 100%; padding: 8px 10px; font-size: 15px;
+    border: 1px solid rgba(128,128,128,.4); border-radius: 8px;
+    background: transparent; color: inherit;
+  }
+  #out {
+    margin-top: 14px; padding: 10px; border-radius: 8px; font-size: 13px;
+    background: rgba(128,128,128,.1); white-space: pre-wrap;
+  }
+  .hint { font-size: 12px; opacity: .65; margin-top: 8px; }
+</style>
+</head>
+<body>
+<h3>翻译设置预览</h3>
+
+<label for="target">目标语言</label>
+<select id="target">
+  <option>中文</option><option>English</option><option>日本語</option><option>한국어</option>
+</select>
+
+<label for="tone">翻译语气</label>
+<select id="tone">
+  <option>自然</option><option>正式</option><option>口语</option>
+</select>
+
+<label for="sample">试翻一段</label>
+<input id="sample" value="今晚月色真美" />
+
+<div id="out">改一下设置，或点下面的按钮试翻一次。</div>
+<div class="hint">这个页面调 AI 走的是宿主原语，页面内没有网络权限（CSP connect-src 'none'）。</div>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+
+  async function loadConfig() {
+    $('target').value = (await tsukiro.config.get('target')) ?? '中文';
+    $('tone').value = (await tsukiro.config.get('tone')) ?? '自然';
+  }
+
+  async function save() {
+    await tsukiro.config.set('target', $('target').value);
+    await tsukiro.config.set('tone', $('tone').value);
+  }
+
+  async function translate() {
+    const out = $('out');
+    out.textContent = '翻译中…';
+    try {
+      const res = await tsukiro.model.chat({
+        messages: [
+          { role: 'system', content: '你是翻译引擎。只输出译文，不要解释。' },
+          {
+            role: 'user',
+            content: `把下面内容翻译成${$('target').value}，语气${$('tone').value}：\n` +
+                     $('sample').value,
+          },
+        ],
+        stream: false,
+      });
+      out.textContent = res.text;
+    } catch (err) {
+      out.textContent = `失败：${err.code}\n${err.message}`;
+    }
+  }
+
+  // 改设置即保存
+  $('target').addEventListener('change', save);
+  $('tone').addEventListener('change', save);
+  $('sample').addEventListener('change', translate);
+
+  await loadConfig();
+  await translate();
+</script>
+</body>
+</html>

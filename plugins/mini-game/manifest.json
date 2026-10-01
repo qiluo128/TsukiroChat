@@ -1,0 +1,48 @@
+{
+  "manifestVersion": 1,
+  "id": "dev.tsukiro.guess-number",
+  "name": "猜数字",
+  "version": "1.0.0",
+  "description": "独立窗口里跑的小游戏，通过 Bridge 和 AI 对话。演示插件页面与页面内调 AI。",
+  "author": { "name": "Tsukiro" },
+  "license": "MIT",
+  "icon": "assets/icon.svg",
+  "minHostVersion": "0.1.0",
+  "hostApi": "^1.0.0",
+
+  "runtime": { "main": "index.js", "type": "module", "autoStart": true },
+
+  "permissions": [
+    { "name": "model.chat", "reason": "让 AI 充当游戏裁判（会消耗你的点数）" },
+    { "name": "ui", "reason": "打开游戏窗口并显示提示" }
+  ],
+
+  "provides": {
+    "ui": [
+      {
+        "slot": "chat.toolbar",
+        "id": "open-game",
+        "type": "button",
+        "label": "猜数字",
+        "icon": "lucide:gamepad-2",
+        "tooltip": "和 AI 玩猜数字",
+        "order": 20,
+        "onClick": { "event": "game.open" }
+      }
+    ],
+    "pages": [
+      {
+        "id": "game",
+        "title": "猜数字",
+        "entry": "pages/game.html",
+        "presentation": "window",
+        "icon": "lucide:gamepad-2",
+        "size": { "width": 440, "height": 580 },
+        "resizable": true,
+        "bridge": true,
+        "permissions": ["model.chat", "ui"],
+        "openFrom": ["chat.toolbar"]
+      }
+    ]
+  }
+}

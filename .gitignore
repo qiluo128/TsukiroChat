@@ -1,0 +1,45 @@
+# ── 工具链不在仓库内（装在 C:\dev\），但防御性忽略 ──
+tools/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+dist/
+
+# ── 下载缓存 ──
+.tmp/
+*.zip
+!plugins/**/*.zip
+
+# ── Dart 的家目录（重定向进仓库，见 scripts/dart.ps1） ──
+.dart/
+
+# ── 依赖 ──
+node_modules/
+# 注意：pubspec.lock 故意不忽略。
+# plugin_core 是 publish_to: none 的包（非发布库），锁定依赖版本才能保证
+# 每个人的构建与 CI 拿到完全一致的依赖 —— 对安全相关的内核尤其重要。
+
+# ── IDE ──
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# ── 测试产物 ──
+coverage/
+*.lcov
+test/.tmp/
+
+# ── 系统 ──
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ── 凭据：绝不入库 ──
+.env
+.env.*
+*.key
+*.pem
+secrets/

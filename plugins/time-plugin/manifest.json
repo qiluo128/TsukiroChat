@@ -1,0 +1,59 @@
+{
+  "manifestVersion": 1,
+  "id": "dev.tsukiro.time",
+  "name": "时间插件",
+  "version": "1.0.0",
+  "description": "让 AI 知道现在几点。演示工具注册与调用链路。",
+  "author": {
+    "name": "Tsukiro",
+    "url": "https://github.com/tsukiro-chat"
+  },
+  "license": "MIT",
+  "icon": "assets/icon.svg",
+  "keywords": ["time", "utility"],
+  "minHostVersion": "0.1.0",
+  "hostApi": "^1.0.0",
+
+  "runtime": {
+    "main": "index.js",
+    "type": "module",
+    "autoStart": true
+  },
+
+  "permissions": [
+    {
+      "name": "sys.time",
+      "reason": "读取系统时间以回答「现在几点」「今天几号」这类问题"
+    }
+  ],
+
+  "provides": {
+    "tools": [
+      {
+        "name": "get_time",
+        "description": "获取当前时间。当用户询问现在几点、今天几号、距离某时刻还有多久时调用。不要在用户只提到「时间」这个词但并非询问当前时刻时调用。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "timezone": {
+              "type": "string",
+              "description": "IANA 时区名，如 Asia/Shanghai、Asia/Tokyo。留空表示使用设备本地时区。"
+            },
+            "format": {
+              "type": "string",
+              "enum": ["iso", "human"],
+              "default": "human",
+              "description": "iso 返回标准格式，human 返回中文可读格式"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "handler": "handlers/get_time.js",
+        "permissions": ["sys.time"],
+        "timeoutMs": 5000,
+        "returns": "object"
+      }
+    ]
+  }
+}

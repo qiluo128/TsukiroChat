@@ -1,0 +1,19 @@
+name: plugin_core
+description: >-
+  Tsukiro Chat 插件内核 —— manifest 解析、权限守门人、工具注册表、Bridge 协议、
+  沙箱路径防护、插件包校验。纯 Dart，无 Flutter 依赖，可独立单元测试。
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  archive: ^3.6.1
+  collection: ^1.18.0
+  meta: ^1.15.0
+  path: ^1.9.0
+
+dev_dependencies:
+  lints: ^4.0.0
+  test: ^1.25.0
