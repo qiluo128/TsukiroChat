@@ -65,8 +65,11 @@ const fn = Object.getPrototypeOf(tsukiro.model).chat;
 | `sms.read` | 短信含验证码与私人通信 |
 | `media.read`（全量相册） | 相册含私人照片 |
 | `location` | 精确位置 |
+| `message.read` | 可读取全部历史对话内容 |
+| `sys.intervene` | 可打断用户当前操作、锁定应用、盖住屏幕 |
+| `sys.clipboard.read` | 剪贴板常年装着密码与验证码 |
 
-> **原则**：凡是「读别人的数据」或「代替用户对外发消息」的，一律 `confirm`。
+> **原则**：凡是「读别人的数据」「代替用户对外发消息」「打断用户当前在干的事」的，一律 `confirm`。
 
 ---
 
@@ -148,7 +151,46 @@ const fn = Object.getPrototypeOf(tsukiro.model).chat;
 |---|---|---|
 | `model.chat` | `install` | 调用模型。**消耗用户点数**，安装弹窗必须提示 |
 
-### 3.10 高风险（`confirm`）
+### 3.10 上下文与消息
+
+这一组是「插件影响 AI 说什么」的能力，风险在于**持续性与隐蔽性** ——
+一次注入看不出问题，持续注入可以慢慢把 AI 的设定带偏。因此拆得比别处细。
+
+| 权限 | 级别 | 说明 |
+|---|---|---|
+| `context.write` | `install` | 往上下文注入文本 / 追加消息。可撤销、有长度上限、记审计 |
+| `context.hook` | `install` | 注册钩子（`onBuild` / `onBeforeModel` / `onAfterModel`）。**持续性影响**，比单次注入更高一档 |
+| `message.read` | `confirm` | 读取消息内容（含历史对话） |
+| `message.write` | `install` | 修改 / 删除已有消息 |
+| `message.send` | `install` | **主动发消息，会触发模型调用、消耗点数**。安装弹窗必须提示 |
+
+> **为什么 `context.write` 与 `context.hook` 分开**：前者是「我说一句」，后者是「以后每轮我都能插话」。
+> 后者给用户的控制感更弱，理应让用户在安装时看得更清楚。
+>
+> **为什么 `message.send` 不并为 `model.chat`**：调模型是「用户问、AI 答」，
+> 主动发消息是「插件替 AI 说话」。后者更容易被用来制造「AI 自己找我说话了」的假象，
+> 因此单独列出，让用户在安装时明确知道。
+
+### 3.11 调度
+
+| 权限 | 级别 | 说明 |
+|---|---|---|
+| `schedule` | `install` | 创建后台定时任务 |
+
+**关键约束**：任务**每次触发时重新校验权限**，而不是创建时校验一次。
+用户在任务创建后撤销了 `model.chat`，那么定时任务里调模型一样会失败。
+否则调度就成了绕过权限的通道。另外还有最短周期 60 秒、单插件最多 16 个任务、休眠不补跑。
+
+### 3.12 系统干预（`confirm`）
+
+| 权限 | 级别 | 说明 |
+|---|---|---|
+| `sys.intervene` | `confirm` | 屏幕拉回 / 锁定应用 / 弹出系统弹窗。**打断用户当前操作** |
+| `sys.overlay` | `install` | 显示悬浮层。仅叠加显示，不打断 |
+
+> 五个高敏感原语合并为一个 `sys.intervene`，理由见 `docs/05-primitives.md` §3.2.1。
+
+### 3.13 高风险（`confirm`）
 
 | 权限 | 级别 |
 |---|---|
@@ -157,11 +199,14 @@ const fn = Object.getPrototypeOf(tsukiro.model).chat;
 | `screen.record` | `confirm` |
 | `mcp` | `install`（预留） |
 
-### 3.11 无需权限
+### 3.14 无需权限
 
 `state.*` · `crypto.*` · `tool.*` · `event.*` · `log.*` · `ui.toast`（含在 `ui` 内）
 
 > 无需权限的原因：它们要么只操作插件私有数据，要么是纯计算，要么是基础设施。注意 `ui.toast` 归入 `ui` 权限组，因为往宿主界面弹东西也是一种 UI 侵入。
+>
+> **`context.*` 和 `message.*` / `schedule.*` 都不在这里** —— 它们影响的是 AI 说什么、
+> 对话长什么样、后台什么时候干活，全部需要显式授权。
 
 ---
 

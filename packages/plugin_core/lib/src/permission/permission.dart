@@ -81,6 +81,46 @@ const Map<String, PermissionSpec> permissionCatalog = <String, PermissionSpec>{
   'screen.capture': PermissionSpec('screen.capture', PermissionLevel.confirm, '截取屏幕'),
   'screen.record': PermissionSpec('screen.record', PermissionLevel.confirm, '录制屏幕'),
 
+  // ── 系统干预：打断用户当前操作 ──
+  'sys.intervene': PermissionSpec(
+    'sys.intervene',
+    PermissionLevel.confirm,
+    '打断用户当前操作：屏幕拉回、锁定其他应用、弹出系统弹窗',
+  ),
+  'sys.overlay': PermissionSpec(
+    'sys.overlay',
+    PermissionLevel.install,
+    '在宿主界面上显示悬浮层（仅叠加显示，不打断操作）',
+  ),
+
+  // ── 上下文注入：影响 AI 说什么 ──
+  'context.write': PermissionSpec(
+    'context.write',
+    PermissionLevel.install,
+    '往 AI 上下文注入文本或追加消息（可撤销、有长度上限、记审计）',
+  ),
+  'context.hook': PermissionSpec(
+    'context.hook',
+    PermissionLevel.install,
+    '注册上下文钩子，持续影响每一轮的上下文组装',
+  ),
+
+  // ── 消息操作 ──
+  'message.read': PermissionSpec('message.read', PermissionLevel.confirm, '读取消息内容，含全部历史对话'),
+  'message.write': PermissionSpec('message.write', PermissionLevel.install, '修改或删除已有消息'),
+  'message.send': PermissionSpec(
+    'message.send',
+    PermissionLevel.install,
+    '主动发送消息（会触发模型调用并消耗点数）',
+  ),
+
+  // ── 调度 ──
+  'schedule': PermissionSpec(
+    'schedule',
+    PermissionLevel.install,
+    '创建后台定时任务（最短周期 60 秒，触发时重新校验权限）',
+  ),
+
   // ── 预留 ──
   'mcp': PermissionSpec('mcp', PermissionLevel.install, '连接远程 MCP Server 或暴露本地 MCP Server'),
 };
@@ -88,12 +128,22 @@ const Map<String, PermissionSpec> permissionCatalog = <String, PermissionSpec>{
 /// 无需权限即可调用的原语域（见 `docs/05-primitives.md` §2）。
 ///
 /// 这些域要么只操作插件私有数据，要么是纯计算，要么是基础设施。
+///
+/// **注意 `context` / `message` / `schedule` 都不在这里** —— 它们影响的是
+/// AI 说什么、对话长什么样、后台什么时候干活，全部需要显式授权。
 const Set<String> permissionFreeDomains = <String>{
+  // 插件私有数据与纯计算
   'state',
   'crypto',
+  // 基础设施
   'tool',
   'event',
   'log',
+  // 自省：插件有权知道宿主支持什么，否则只能靠版本号猜（见 docs/16 §6）
+  'host',
+  'primitive',
+  'hook',
+  'slot',
 };
 
 /// 查询权限定义，未知权限返回 null。
@@ -137,9 +187,31 @@ const Map<String, String> _exactPrimitivePermissions = <String, String>{
   'media.listPhotos': 'media.read',
   'media.getPhoto': 'media.read',
   'media.audio.play': 'media.read',
+  'media.video.play': 'media.read',
   'media.camera.capture': 'media.camera',
   'media.camera.record': 'media.camera',
   'media.audio.record': 'media.microphone',
+
+  // 上下文注入：单次写入 vs 持续钩子，风险不同档
+  'context.inject': 'context.write',
+  'context.append': 'context.write',
+  'context.onBuild': 'context.hook',
+  'context.onBeforeModel': 'context.hook',
+  'context.onAfterModel': 'context.hook',
+
+  // 消息操作：读 / 写 / 主动发送 三档（发送会触发模型调用，单独一档）
+  'message.get': 'message.read',
+  'message.update': 'message.write',
+  'message.append': 'message.write',
+  'message.delete': 'message.write',
+  'message.send': 'message.send',
+
+  // 系统干预：打断用户当前操作（overlay 只叠加显示，风险低一档）
+  'sys.screen.pullBack': 'sys.intervene',
+  'sys.app.lock': 'sys.intervene',
+  'sys.dialog.popup': 'sys.intervene',
+  'sys.overlay.show': 'sys.overlay',
+  'sys.overlay.hide': 'sys.overlay',
 
   // 通讯：发短信与读短信分开
   'sms.send': 'sms.send',
@@ -178,6 +250,7 @@ const Map<String, String> _domainDefaultPermissions = <String, String>{
   'model': 'model.chat',
   'a11y': 'a11y',
   'mcp': 'mcp',
+  'schedule': 'schedule',
   'ui': 'ui', // ui.overlay.* 是特例，见下
 };
 

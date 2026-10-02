@@ -16,6 +16,9 @@ linter:
     - prefer_single_quotes
     - unawaited_futures
     - avoid_print
-    - directives_ordering
-    # 刻意不启用 require_trailing_commas：它是纯格式偏好，会产生大量 info 噪音，
-    # 而真正重要的是下面的 strict-* 与 unused_* 检查。
+    # 刻意不启用 require_trailing_commas：纯格式偏好，会产生大量 info 噪音，
+    # 遮蔽真正重要的 strict-* 与 unused_* 检查。
+    #
+    # 刻意不启用 directives_ordering：`plugin_core.dart` 的导出是按
+    # 「基础设施 / 能力轴 / 时机轴 / 沙箱 / 传输」分组排的，按字母顺序反而
+    # 看不出架构分层。单文件内的 import 仍然保持字母序（人工维护）。

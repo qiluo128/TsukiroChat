@@ -129,6 +129,15 @@ class TsukiroError extends Error {
 | `screen.capture` | `screen.capture` | **每次确认** |
 | `screen.record` | `screen.record` | **每次确认** |
 | `model.chat` / `model.embed` / `model.vision` | `model.chat` | 消耗用户点数，需授权 |
+| `media.video.play` | `media.read` | 播放不额外授权 |
+| `sys.screen.pullBack` `sys.app.lock` `sys.dialog.popup` | `sys.intervene` | **每次确认**；语义为「打断用户当前操作」 |
+| `sys.overlay.show` / `sys.overlay.hide` | `sys.overlay` | 仅叠加显示，不打断 |
+| `context.inject` / `context.append` | `context.write` | 往 AI 上下文写 |
+| `context.onBuild` / `onBeforeModel` / `onAfterModel` | `context.hook` | 注册钩子比单次注入风险更高（持续性），单独一档 |
+| `message.get` | `message.read` | 读别人的消息 |
+| `message.update` / `append` / `delete` | `message.write` | 改已有消息 |
+| `message.send` | `message.send` | **会触发模型调用、消耗点数**，单独一档 |
+| `schedule.*` | `schedule` | 后台任务，触发时**重新校验**权限 |
 | `tool.*` `event.*` `log.*` | 无需权限 | 基础设施 |
 | `mcp.*` | `mcp` | 预留 |
 
@@ -175,6 +184,25 @@ await tsukiro.fs.read({ path: '../../host_secret.txt' });  // ❌ SANDBOX_VIOLAT
 
 > `sys.time` 是 Demo 的四个原语之一，也是「时间插件」依赖项。注意它是**唯一一个即使无网络也能验证工具调用链路**的原语 —— 所以选它做第一个测试插件。
 
+#### 3.2.1 高敏感系统操作
+
+这一组会**直接干预用户当前正在做的事**（打断他、锁他的应用、盖住他的屏幕），因此单列为 `confirm` 级：
+每次调用都要弹原生确认框，**永不提供「不再询问」**。
+
+| 原语 | 签名 | 返回 | 权限 | 状态 |
+|---|---|---|---|---|
+| `sys.screen.pullBack` | `{}` | `{ ok }` | `sys.intervene` | ⬜ 预留 |
+| `sys.app.lock` | `{ pkg }` | `{ ok }` | `sys.intervene` | ⬜ 预留 |
+| `sys.dialog.popup` | `{ title, content, buttons? }` → `{ buttonId }` | `sys.intervene` | ⬜ 预留 |
+| `sys.overlay.show` | `{ overlayId }` | `{ ok }` | `sys.overlay` | ⬜ 预留 |
+| `sys.overlay.hide` | `{}` | `{ ok }` | `sys.overlay` | ⬜ 预留 |
+
+> **为什么合并为一个 `sys.intervene` 权限而不是五个**：这五个原语的共同性质是「打断用户」，
+> 用户对它们的心理预期是同一件事。拆成五个权限只会让安装弹窗更长、用户更麻木，
+> 反而不如一个语义清晰的「干预当前操作」+ 逐次确认来得安全。
+>
+> `sys.overlay.*` 单独一档，因为它只是叠加显示，不打断操作，风险等级低于其余四个。
+
 ### 3.3 媒体 `media.*`
 
 | 原语 | 签名 | 权限 | 状态 |
@@ -185,6 +213,7 @@ await tsukiro.fs.read({ path: '../../host_secret.txt' });  // ❌ SANDBOX_VIOLAT
 | `media.camera.record` | `{ facing?, maxMs? }` → `{ jobId }` | `media.camera` | 🔷 |
 | `media.audio.record` | `{ maxMs? }` → `{ jobId }` | `media.microphone` | 🔷 |
 | `media.audio.play` | `{ path, loop?=false }` → `{ jobId }` | `media.read` | 🔷 |
+| `media.video.play` | `{ path, loop?=false, muted?=false }` → `{ jobId }` | `media.read` | 🔷 |
 
 > 轨道以**沙箱路径**交接，不是 base64 灌进 JS。大文件走路径，小文件才走 base64。
 
@@ -386,6 +415,91 @@ tsukiro.ui.toast({ text: res.text.slice(0, 40) });
 | `mcp.stop` | `{ id }` | ⬜ 预留 |
 | `mcp.status` | `{ id }` | ⬜ 预留 |
 
+### 3.20 上下文注入 `context.*`
+
+宿主提供「往 AI 上下文注入」的能力，但**不预设任何业务概念**。宿主不知道「欲望」「好感度」
+是什么，只知道「插件注入了一段文本 / 一个消息 / 一个钩子」。
+
+| 原语 | 签名 | 返回 | 权限 | 状态 |
+|---|---|---|---|---|
+| `context.inject` | `{ text, position?='append', priority?=100, ttlMs?, scope?='session', tag? }` | `{ injectionId }` | `context.write` | ⬜ 预留 |
+| `context.append` | `{ role, content, position?='end' }` | `{ ok }` | `context.write` | ⬜ 预留 |
+| `context.onBuild` | `{ handler, priority?=100 }` | `{ hookId }` | `context.hook` | ⬜ 预留 |
+| `context.onBeforeModel` | `{ handler, priority?=100 }` | `{ hookId }` | `context.hook` | ⬜ 预留 |
+| `context.onAfterModel` | `{ handler, priority?=100 }` | `{ hookId }` | `context.hook` | ⬜ 预留 |
+
+字段说明：
+
+| 字段 | 取值 | 含义 |
+|---|---|---|
+| `position` | `prepend` / `append` | 注入到 system prompt 的开头还是结尾 |
+| `priority` | 数字，越小越靠前 | 多个插件注入时的排序依据 |
+| `scope` | `once` / `session` / `persistent` | 只在下一轮 / 本次会话 / 一直有效 |
+| `ttlMs` | 毫秒 | 到点自动失效，防止插件注入的内容永久污染上下文 |
+| `tag` | 字符串 | 插件自己的标记，便于后续 `context.clear({tag})` 精确撤销 |
+
+**三条硬约束**：
+
+1. **可撤销**。每次注入返回 `injectionId`。插件停用 / 崩溃时，宿主**自动清空该插件的全部注入**。
+   插件不能靠"注入后不管"来留后门。
+2. **有上限**。单插件注入总长度上限（默认 8 KB），且所有插件注入总量上限（默认 32 KB）。
+   防止某个插件把上下文撑爆、把用户的 token 烧光。
+3. **可审计**。每次注入记审计（只记 tag 与长度，不记内容全文）。
+
+> **为什么不做 `context.replace`**：让插件替换整个 system prompt 会让插件能冒充宿主设定的人设，
+> 也会让多个插件互相覆盖到不可预期。只给「追加 + 排序 + 撤销」，能力足够且可控。
+
+### 3.21 消息操作 `message.*`
+
+| 原语 | 签名 | 权限 | 状态 |
+|---|---|---|---|
+| `message.update` | `{ messageId, patch }` | `message.write` | ⬜ 预留 |
+| `message.append` | `{ messageId, content }` | `message.write` | ⬜ 预留 |
+| `message.send` | `{ content, role?='assistant' }` | `message.send` | ⬜ 预留 |
+| `message.delete` | `{ messageId }` | `message.write` | ⬜ 预留 |
+| `message.get` | `{ messageId }` / `{ sessionId, limit? }` | `message.read` | ⬜ 预留 |
+
+`patch` 只允许改**白名单字段**：`content` / `richContent` / `meta.<pluginId>.*`。
+**不允许**改 `id` / `role` / `sessionId` / `createdAt` / `status` —— 那些是宿主的结构字段，
+让插件改会造成数据模型自相矛盾。
+
+`message.send` 与 `message.append` 分开的理由：前者会**触发一次模型调用**（消耗点数），
+后者只是改已有消息的显示。两者风险与成本差一个量级，因此权限也分开。
+
+### 3.22 调度 `schedule.*`
+
+| 原语 | 签名 | 权限 | 状态 |
+|---|---|---|---|
+| `schedule.once` | `{ delayMs, handler, tag? }` | `schedule` | ⬜ 预留 |
+| `schedule.interval` | `{ periodMs, handler, tag?, immediate?=false }` | `schedule` | ⬜ 预留 |
+| `schedule.cancel` | `{ id }` | `schedule` | ⬜ 预留 |
+| `schedule.list` | `{}` → `[{ id, kind, periodMs, nextRunAt, tag }]` | `schedule` | ⬜ 预留 |
+
+用于「自动触发对话」「定时检查状态」这类场景。
+
+**四条约束**（没有约束的调度器就是耗电与烧钱黑洞）：
+
+| 约束 | 默认 | 说明 |
+|---|---|---|
+| 最短周期 | 60 秒 | `periodMs < 60000` 直接拒绝；想更频繁请用事件，不要轮询 |
+| 单插件任务数上限 | 16 | 超出 `RATE_LIMITED` |
+| 宿主休眠时的行为 | 暂停 | 醒来后**不补跑**错过的周期，只按新周期继续 |
+| 触发时的权限 | **重新校验** | 用户在任务创建后撤销了权限 → 该任务自动取消并通知插件 |
+
+最后一条尤其重要：**调度任务不能成为绕过权限的通道**。任务每次触发都要重走守门人，
+而不是在创建时校验一次就一劳永逸。
+
+### 3.23 关于 `ui.render` 的取舍
+
+补充文档里重新列出了 `ui.render`。**本设计不实现它**，理由与 ADR-004 一致：
+
+- 宿主内控件走 `provides.ui` **声明式描述**（宿主渲染，保证视觉一致与不可伪装）
+- 需要完全自定义外观的走 `provides.pages` **独立页面**（WebView 容器）
+
+「让宿主动态渲染插件给的任意 UI 树」会同时破坏这两条：既拿不到一致性，又绕过了容器的
+可辨识性要求（插件可以渲染出一模一样的宿主界面）。能力上并不缺失 —— 独立页面已经给了
+完全自由。
+
 ---
 
 ## 4. Demo 范围
@@ -401,7 +515,23 @@ Demo 只实现四个原语，刻意选得**足够小**但能覆盖所有链路�
 
 **为什么是这四个**：它们分别命中「工具调用」「宿主 UI 副作用」「模型代理」「沙箱文件」四条独立链路。四个都通，说明原语层的路由、权限、审计、沙箱四套机制都工作正常。
 
-其它原语在 Demo 阶段**必须在宿主侧返回 `UNSUPPORTED`**（而不是崩溃或静默），这样插件的降级逻辑也能被测到。
+其它原语在 Demo 阶段**必须返回 `UNSUPPORTED`**（而不是崩溃或静默），这样插件的降级逻辑也能被测到。
+
+### 4.1 但接口必须一次留全
+
+Demo 只**实现**四个原语，但底层必须**注册全部 23 个域**。区别在于：
+
+| | Demo 做法 |
+|---|---|
+| 注册表 | 全部原语在 `PrimitiveRegistry` 里注册（含 `implemented: false` 的） |
+| 未实现的原语 | handler 是统一的一个「返回 `UNSUPPORTED`」占位实现 |
+| 自省 | `registry.describe()` 能列出全部原语及其权限、参数 schema、实现状态 |
+| 加新原语 | 只需 `registry.register(spec)`，**不改宿主核心任何一行** |
+
+这样做的理由：如果 Demo 只把四个原语硬编码进一个 `switch`，那么后面每加一个原语都要
+动宿主核心，插件框架就退化成了「宿主写死的功能列表」。**这正是本补充文档要防的事。**
+
+见 `docs/16-extensibility.md`。
 
 ---
 

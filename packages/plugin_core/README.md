@@ -1,4 +1,4 @@
-# plugin_core
+﻿# plugin_core
 
 Tsukiro Chat 插件内核。**纯 Dart，无 Flutter 依赖。**
 
@@ -28,7 +28,7 @@ cd packages\plugin_core
 & ..\..\scripts\dart.ps1 test       # 需要一次性 danger-full-access 提权
 ```
 
-当前状态：**271 个单测全绿，`dart analyze` 零问题。**
+当前状态：**299 个单测全绿，`dart analyze` 零问题。**
 
 ## 模块地图
 

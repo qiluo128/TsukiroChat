@@ -23,6 +23,7 @@
 | `chat.toolbar` | 聊天页工具栏 | 翻译、总结、朗读 | **Demo** |
 | `chat.input.actions` | 输入框右侧按钮区 | 附件、语音、快捷提示 | Demo |
 | `chat.message.menu` | 长按消息弹出的菜单 | 复制、重新生成、翻译本条 | Demo |
+| `chat.message.after` | **消息气泡下方**（富内容区） | 状态条、图表、交互控件 | **Demo** |
 | `home.cards` | 首页卡片区 | 快捷入口、状态卡 | 阶段 5 |
 | `settings.sections` | 设置页分区 | 插件自己的设置项 | Demo |
 | `profile.actions` | 角色页操作区 | 导出、分享、编辑扩展 | 阶段 5 |
@@ -258,7 +259,150 @@
 
 ---
 
-## 6. 渲染与刷新时机
+## 7. 消息富内容（`chat.message.after`）
+
+AI 气泡正下方的一块区域，插件可以在那里渲染富内容（SVG 图表、按钮、交互控件）。
+这是「AI 说的话」和「围绕这句话的可操作内容」之间的连接点，也是两个示例验证里的关键。
+
+### 7.1 数据从哪来
+
+两条路径，都走同一条渲染管线：
+
+```
+① 工具返回时
+   插件工具 handler 返回 { text, richContent: {...} }
+   └─ 宿主把 richContent 挂到本轮 assistant 消息上（meta.<pluginId>.richContent）
+   └─ 该消息渲染时，chat.message.after 插槽被激活
+
+② 插件主动追加时
+   插件调 message.update({ messageId, patch: { richContent: {...} } })
+   └─ 同样挂到消息上
+```
+
+**`richContent` 是插件的私有数据**，宿主不理解它的结构，只负责：
+1. 存到 `message.meta.<pluginId>.richContent`
+2. 在渲染该消息时，把对应插件的 `chat.message.after` 组件挂载起来
+3. 通过 Bridge 把 `richContent` 交给该插件自己的页面/组件
+
+### 7.2 声明
+
+```jsonc
+"ui": [
+  {
+    "slot": "chat.message.after",
+    "id": "status-card",
+    "type": "webview",
+    "entry": "components/status.html",
+    "label": "状态卡",
+    "height": { "mode": "auto", "max": 240 },
+    "when": { "hasRichContent": true },
+    "permissions": ["ui"]
+  }
+]
+```
+
+| 字段 | 说明 |
+|---|---|
+| `type: "webview"` | 这是插槽控件里**唯一**允许插件自带 HTML 的类型（其余由宿主渲染） |
+| `height.mode` | `auto`（由插件上报高度）/ `fixed` / `max` |
+| `when.hasRichContent` | 该消息上有没有本插件的 `richContent`；没有就不渲染，避免空白占位 |
+
+### 7.3 为什么这里破例允许 WebView
+
+`chat.message.after` 的用途就是「每个插件长得不一样」—— 状态条、雷达图、任务清单，
+用声明式控件描述不了。所以破例，但用三条约束兜住：
+
+1. **必须挂在具体消息上**。没有 `richContent` 就不渲染，不会出现悬浮在整个聊天页上的插件 UI。
+2. **高度由宿主控制上限**（`height.max`）。默认 240px，防止插件用一块超长内容把聊天流冲垮。
+3. **必须可折叠 + 带来源标记**。宿主在区块左上角显示插件图标与名称，用户可折叠。
+   这满足了「插件 UI 必须可辨识」的硬约束。
+
+### 7.4 交互回流
+
+富内容里的交互（点按钮、拖滑块）通过 Bridge 回插件，插件再决定下一步：
+
+```js
+// components/status.html
+document.getElementById('boost').onclick = async () => {
+  const r = await tsukiro.tool.call({ name: 'adjust_mood', args: { delta: 5 } });
+  await tsukiro.message.update({
+    messageId: tsukiro.context.messageId,
+    patch: { richContent: r.richContent },   // 重新渲染同一块
+  });
+};
+```
+
+也可选择「发一条新消息」：`message.send({ content })`。
+
+---
+
+## 8. 三层 UI 扩展点
+
+补充文档给出的 L1 / L2 / L3 三层。**manifest 字段一次留全，宿主现在只解析 L1。**
+
+### 8.1 L1 样式级（现在做）
+
+宿主把所有视觉变量抽成**设计令牌（design tokens）**，美化包只覆盖令牌值。
+
+| 令牌组 | 示例 |
+|---|---|
+| `color.*` | `color.primary` `color.userBubble` `color.assistantBubble` |
+| `font.*` | `font.family` `font.size.body` `font.weight.bold` |
+| `radius.*` | `radius.bubble` `radius.card` `radius.button` |
+| `spacing.*` | `spacing.page` `spacing.messageGap` |
+| `shadow.*` | `shadow.card` `shadow.fab` |
+| `animation.*` | `animation.duration.fast` `animation.easing.standard` |
+| `icon.*` | `icon.send` `icon.regenerate` |
+
+```jsonc
+{
+  "provides": {
+    "theme": {
+      "id": "sakura",
+      "name": "樱花",
+      "tokens": {
+        "color.primary": "#FF6B9D",
+        "font.size.body": 16,
+        "radius.bubble": 18
+      }
+    }
+  }
+}
+```
+
+**为什么令牌必须是白名单**：令牌是「值」不是「CSS」。宿主拿到 `#FF6B9D` 或 `16` 后
+自己拼装样式，因此 `url(...)` / `expression(...)` / `@import` 这类注入无从下手。
+未知令牌名直接拒绝（拼错要报错，不能静默忽略 —— 与权限名同一原则）。
+
+### 8.2 L2 布局级（预留，不解析）
+
+```jsonc
+"layout": {
+  "mode": "compact",              // 预设布局模式
+  "slots": {                      // 插槽重排 / 显隐 / 顺序
+    "chat.toolbar": { "order": ["translate", "summarize"], "hidden": ["builtin.copy"] }
+  },
+  "stack": [], "grid": [], "absolute": [], "scroll": [], "tabs": []
+}
+```
+
+**为什么现在不解析**：布局是最容易让宿主 UI 崩掉的一层 —— 一个插件把 `chat.toolbar`
+顺序改乱，用户体验就毁了。等 L1 跑稳、有了真实美化包作者，再按实际需求放开子集。
+
+### 8.3 L3 替换级（预留，不解析）
+
+```jsonc
+"replaces": { "ui.components": ["messageBubble"], "ui.pages": ["chat.main"] },
+"data": { "messages": true, "contacts": true, "session": true, "model": true }
+```
+
+**为什么现在不解析**：整页接管意味着插件可以实现出一个和宿主一模一样的界面 ——
+这与「插件不可伪装宿主 UI」直接冲突。真要放开，需要先设计一套「接管时必须显示来源水印」
+的机制。能力上不缺：独立页面（`provides.pages`）已经能给出完全自定义的界面。
+
+---
+
+## 9. 渲染与刷新时机
 
 ```
 插件安装完成
@@ -276,22 +420,27 @@
 
 配置变更
    └─▶ 只重绘受影响的控件（按 config key 订阅）
+
+插件注入上下文失效（context.* 的 ttl 到期 / 插件停用）
+   └─▶ 宿主清空该插件的全部注入，并重绘相关消息的富内容区
 ```
 
 ---
 
-## 7. 安全约束汇总
+## 10. 安全约束汇总
 
 | 约束 | 原因 |
 |---|---|
 | 插槽控件必须由宿主渲染 | 视觉一致性 + 不可伪装 |
+| `chat.message.after` 是唯一允许插件自带 HTML 的插槽 | 富内容天然需要各自的外观，用高度上限 + 来源标记 + 可折叠兜住 |
 | `asset:` 图标只接受位图，不接受内联 SVG | 防 XSS |
-| `tokens`（主题）只接受值，不接受 CSS 片段 | 防注入任意样式 |
+| `tokens`（主题）只接受**值**，不接受 CSS 片段；未知令牌名拒绝 | 防注入任意样式 |
 | 独立页面标题栏为原生层 | 插件不能伪装成宿主页面 |
 | 覆盖层必须有可见边界 | 防隐形点击劫持 |
 | `when` 无表达式语言 | 渲染路径不执行插件逻辑 |
 | 页面 CSP `connect-src 'none'` | 强制网络走原语白名单 |
 | 同时最多 2 个覆盖层 | 防遮挡宿主 UI 到不可用 |
+| L2 布局 / L3 接管本阶段**只解析不执行** | 这两层最容易让宿主 UI 崩掉或让插件伪装宿主，需要先有 L1 的真实使用反馈 |
 
 ---
 
@@ -300,3 +449,5 @@
 | 日期 | 变更 |
 |---|---|
 | 2026-02 | 初版：三种形态、9 个插槽、完整控件 schema、容器规范、安全约束 |
+| 2026-02 | 补 `chat.message.after` 富内容插槽；补 L1 设计令牌 / L2 布局 / L3 接管三层扩展点 |
+
