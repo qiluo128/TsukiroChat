@@ -1,4 +1,4 @@
-# ── 工具链不在仓库内（装在 C:\dev\），但防御性忽略 ──
+﻿# ── 工具链不在仓库内（装在 C:\dev\），但防御性忽略 ──
 tools/
 .dart_tool/
 .flutter-plugins
@@ -49,3 +49,13 @@ secrets/
 # 只能轮换密钥。见 dev/README.md。
 dev/dev-config.json
 dev/*.local.json
+
+# ── Flutter 宿主 App 的构建产物 ──
+# （build/ 已在上面统一忽略；这里补 Flutter 特有的一堆）
+packages/host_app/.dart_tool/
+packages/host_app/android/.gradle/
+packages/host_app/android/local.properties
+packages/host_app/android/app/debug/
+packages/host_app/android/app/profile/
+packages/host_app/android/app/release/
+*.iml

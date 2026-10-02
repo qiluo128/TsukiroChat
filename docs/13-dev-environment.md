@@ -8,33 +8,74 @@
 | Git | ✅ | 2.55.0.windows.3 | `C:\Apps\Git\cmd\git.exe` |
 | Node.js | ✅ | v26.7.0 | `C:\Program Files\nodejs\node.exe` |
 | Python | ✅ | 3.8.6 | `C:\Program Files\python\python.exe` |
-| **Dart SDK** | ✅ 已装 | **3.12.2 stable** | `C:\dev\dart-sdk` |
-| **Flutter** | ⬜ 未安装 | — | `C:\dev\flutter`（计划） |
-| **JDK 17** | ⬜ 未安装 | — | `C:\dev\jdk`（计划） |
-| **Android SDK** | ⬜ 未安装 | — | `C:\dev\android-sdk`（计划） |
-| Android Studio / 模拟器 | ⬜ 未安装 | — | — |
-| Visual Studio Build Tools | ⬜ 未安装 | — | 仅 Windows 桌面目标需要 |
+| **Dart SDK**（独立） | ✅ 已装 | **3.12.2 stable** | `C:\dev\dart-sdk`，仅用于纯内核单测 |
+| **Flutter** | ✅ 已装 | **3.47.6 stable**（Dart 3.13.5） | `C:\dev\flutter` |
+| **JDK** | ✅ 已装 | **Temurin 17.0.20.1+1** | `C:\dev\jdk` |
+| **Android SDK** | ✅ 已装 | platform 36 / build-tools 36.0.0 / NDK r28c | `C:\dev\android-sdk` |
+| **Gradle 家目录** | ✅ 已配 | Gradle 9.3.1 + 国内镜像 | `C:\dev\gradle-home` |
+| Android Studio | ⬜ 未装 | — | 不需要：只用 cmdline-tools，省 3–4 GB |
+| 模拟器 | ⬜ 未装 | — | **建议用真机** |
+| Visual Studio Build Tools | ⬜ 未装 | — | 仅 Windows 桌面目标需要 |
 
-> **不装 Flutter / Android SDK 是本轮的刻意选择**：插件内核（`packages/plugin_core`）是纯
-> Dart，能在桌面单测通过。先把风险最高的部分测透，再决定是否付 6–8 GB 的下载。
+**工具链总计约 10.1 GB**（flutter 3111 + gradle-home 3353 + android-sdk 2805 + dart-sdk 568 + jdk 303 MB）。
+
+**构建验证**：`app-debug.apk` 143.5 MB 构建成功（首次含 NDK 下载，360 秒）。
+
+> **Flutter / Android SDK 已装**（2026-10 更新）。~~不装是刻意的选择~~ —— 当时是为了先把
+> 插件内核（纯 Dart、可单测）测透再付那 10 GB。内核与模型层测透之后才装的工具链。
 > 见 [15-status](15-status.md) 与 ADR-009。
 
 ### 1.1 工具链安装位置约定
 
 ```
 C:\dev\
-├─ dart-sdk\          # Dart（当前阶段）
-├─ flutter\           # Flutter SDK（含自带 Dart）
-├─ jdk\               # JDK 17
-├─ android-sdk\       # Android SDK
-│  ├─ cmdline-tools\
-│  ├─ platform-tools\ # adb
-│  ├─ platforms\
-│  └─ build-tools\
-└─ pub-cache\         # PUB_CACHE，避免占 C 盘用户目录
+├─ dart-sdk\          # 独立 Dart（仅纯内核单测用，与 Flutter 自带的那个并存）
+├─ flutter\           # Flutter SDK 3.47.6（自带 Dart 3.13.5）
+├─ jdk\               # Temurin JDK 17.0.20.1
+├─ android-sdk\       # cmdline-tools + platform 36 + build-tools 36 + NDK r28c
+├─ gradle-home\       # GRADLE_USER_HOME：Gradle 分发 + 依赖缓存 + init.gradle
+└─ pub-cache\         # （实际落在仓库内 .dart/pub-cache，见 §2.5）
 ```
 
-**为什么不放在仓库内**：工具链体积大（Flutter + Android 约 6–8 GB），不应进版本控制，也不应随仓库移动。
+**为什么不放在仓库内**：工具链 10 GB，不应进版本控制，也不应随仓库移动。
+
+---
+
+## 1.2 Gradle 国内镜像 —— **不做这步构建一定失败**
+
+实测（`scripts/bench_maven.mjs`）：
+
+| 域名 | 结果 | 影响 |
+|---|---|---|
+| `maven.google.com` | **TIMEOUT** | 解析 Android 依赖全靠它 |
+| `services.gradle.org` | TLS 失败 | Gradle wrapper 下载 Gradle 自身 |
+| `maven.aliyun.com/repository/*` | ✅ 可用 | 替代 google / central |
+| `mirrors.cloud.tencent.com/gradle` | ✅ 可用 | 替代 Gradle 分发 |
+
+配置：`& .\scripts\setup_gradle.ps1 -PatchTemplates`
+
+1. `C:\dev\gradle-home\init.gradle` —— settings 层兜底
+2. **改 Flutter 的工程模板** `settings.gradle.kts.tmpl`：把镜像插进 `repositories {}` 的**最前面**
+3. 顺带改已有工程的 `settings.gradle.kts`
+
+### ⚠️ 这里踩过一个坑，值得单独记
+
+第一版用 `init.gradle` 的 `allprojects { repositories { … } }` 注入，构建报：
+
+```
+Build was configured to prefer settings repositories over project repositories
+but repository 'maven' was added by settings file 'settings.gradle.kts'
+```
+
+两个问题：
+
+1. **新版 Gradle 默认 `PREFER_SETTINGS`**，拒绝项目级仓库
+2. 就算能加，`settingsEvaluated` 里**追加**是排在后面的。Gradle 按声明顺序
+   **依次尝试**仓库，于是仍然先撞 `google()`（超时）—— **配置"看起来生效了"，构建照样卡住**
+
+**结论：镜像必须改 settings 层的声明顺序并放最前，不能做外围注入。**
+"顺序"这种事不写进文档，下一个人一定会再踩一次。
+
 
 ---
 

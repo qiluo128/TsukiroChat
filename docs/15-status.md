@@ -21,7 +21,12 @@
 | 三个测试插件 + 一个美化包 | ✅ 完成 | `plugins/{time-plugin,translate-button,mini-game,sakura-theme}` |
 | 插件打包流水线 | ✅ 已跑通 | `scripts/pack_plugin.mjs`，含恶意样本构造 |
 | Zip Slip / 符号链接防护 | ✅ 已实现并测试 | 真实 zip 构造 + 真实插件端到端 |
-| Flutter 宿主 App | ⬜ 未开始 | 需要 6–8 GB 工具链下载，见 §4 |
+| **工具链（Flutter/JDK/Android SDK）** | ✅ **已装并验证** | 共 10.1 GB；`app-debug.apk` 143.5 MB 构建成功 |
+| **Flutter 宿主工程** | ✅ 已创建 | `packages/host_app`，Flutter 3.47.6 + AGP 9.1.0 |
+| **Gradle 国内镜像** | ✅ 已配 | 不配的话 `maven.google.com` 超时，构建必失败 |
+| 聊天页（接入 `model_gateway`） | ⬜ 下一步 | Demo 流程 1 |
+| WebView + Bridge 实际联通 | ⬜ 未开始 | 阶段 A3。**唯一还没被真实验证的一环** |
+| Demo 端到端 21 项验收（真机） | ⬜ 未开始 | 阶段 A4 |
 | WebView + Bridge 实际联通 | ⬜ 未开始 | 阶段 A3 |
 | Demo 端到端 21 项验收（真机） | ⬜ 未开始 | 阶段 A4 |
 
@@ -100,7 +105,9 @@ $ dart test
 | 9 | 测试假实现用 `text.codeUnits` 存中文 | 中（测试缺陷） | 中文的 code unit（U+4F60 = 20320）塞进 `Uint8List` 被截成 8 位，读回乱码。**任何"字符串 → 字节"的转换都必须显式 UTF-8** |
 | 10 | **`tool_calls[].function.arguments` 传了对象而非 JSON 字符串** | **高（真协议）** | OpenAI 协议要求它是**序列化后的 JSON 文本**。离线假网关不校验，所以 373 个单测全绿也发现不了；接真 API 立刻 400：`expected a string, but got {} instead`。根源是流式——参数按字符分片推送，线上表示只能是字符串 |
 | 11 | **AgentLoop 自己的模型调用没写审计** | **高（漏审计/漏计费）** | 宿主的调用不经过 `PrimitiveRegistry`，容易被当成"内部操作"不记账。但它**真的在消耗用户点数**，漏了就无法与网关对账。按 `docs/06` §8.3，宿主调用记 `pluginId = '__host__'` |
-| 12 | 凭据扫描器在 TLS 失败时报"未发现凭据" | **高（假阴性）** | `raw.githubusercontent.com` 在本机 TLS 校验失败，每个请求静默返回 null，扫描器于是报"通过"。**fail-open 的检查比没有检查更危险**——它给的是错误的信心。已改为 fail-closed |
+| 12 | 凭据扫描器在 TLS 失败时报"未发现凭据" | **高（假阴性）** | `raw.githubusercontent.com` 在本机 TLS 校验失败，每个请求静默返回 null，扫描器于是报"通过"。**fail-open 的检查比没有检查更危险**——它给的是错误的信心。已改为 fail-closed |
+| 13 | **Gradle 拒绝项目级仓库 + 镜像顺序不对** | **高（构建必失败）** | `init.gradle` 里 `allprojects { repositories }` 被新版 Gradle 的 `PREFER_SETTINGS` 拒绝；而且 `settingsEvaluated` 里**追加**是排在后面的，仍然先撞超时的 `google()`。**配置看起来生效了但构建照样卡住** —— 必须改 settings 层的声明顺序并放最前 |
+| 14 | **PowerShell 把原生命令的 stderr 当错误** | 中（反复踩） | `$ErrorActionPreference='Stop'` 会把 flutter/git/java 写在 stderr 的**正常进度**升级成终止错误，于是"命令成功了脚本却报错"。本项目踩了四次，已固化成 `Invoke-Native` 工具函数（只依据 `$LASTEXITCODE` 判断成败） |
 
 **其中 1–3 都是 fail-open 方向的缺陷** —— 如果不写这几条测试，权限系统会静默失效而没人发现。这正好验证了 ADR-009「先做纯 Dart 内核 + 单测」的判断：这些问题在 Flutter + Android + WebView 混合环境里几乎不可能定位。
 
