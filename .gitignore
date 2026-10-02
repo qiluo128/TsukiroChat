@@ -59,3 +59,5 @@ packages/host_app/android/app/debug/
 packages/host_app/android/app/profile/
 packages/host_app/android/app/release/
 *.iml
+# ── Host App 里的真实凭据（模板 example 是提交的） ──
+packages/host_app/assets/dev-config.json

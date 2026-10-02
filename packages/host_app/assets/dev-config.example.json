@@ -1,0 +1,18 @@
+{
+  "_说明": "这是模板。真实配置放在同目录的 dev-config.json（已 gitignore）。",
+  "_为什么": "仓库是 public，把真 Key 提交上去等于公开。见 dev/README.md。",
+
+  "provider": {
+    "protocol": "openai",
+    "baseUrl": "http://103.236.91.136:52165/v1",
+    "apiKey": "",
+    "defaultModel": "deepseek-v4.1-flash",
+    "displayName": "测试中转站"
+  },
+
+  "persona": {
+    "name": "雪",
+    "greeting": "……又是你。有事说事。",
+    "systemPrompt": "你是雪，一个冷淡但心软的学姐。说话简短，不主动热情，但该帮的忙会帮。不要用颜文字，不要过度解释。"
+  }
+}

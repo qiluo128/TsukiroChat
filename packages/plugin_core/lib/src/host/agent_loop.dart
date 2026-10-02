@@ -154,6 +154,7 @@ class AgentRunContext {
     required this.systemPrompt,
     required List<ChatMessage> messages,
     Map<String, dynamic>? vars,
+    this.onDelta,
   })  : messages = List<ChatMessage>.from(messages),
         // 必须是可变 map：循环会往里写 hitStepLimit 等标记。
         // 用 const {} 当默认值会在写的时候抛 "Cannot modify unmodifiable map"。
@@ -163,6 +164,9 @@ class AgentRunContext {
   String systemPrompt;
   List<ChatMessage> messages;
   final Map<String, dynamic> vars;
+
+  /// 流式增量回调（界面上"边收边显示"用）。为 null 表示不需要流式。
+  final ModelDeltaCallback? onDelta;
 
   /// 当前轮次（从 1 开始）。
   int round = 0;
@@ -197,6 +201,7 @@ class AgentLoop {
     this.persona = '你是一个有用、简洁的助手。',
     this.maxSteps = 8,
     this.contextAssembler,
+    this.streamingCall,
     AuditSink? audit,
     Map<String, AgentStep> stepOverrides = const <String, AgentStep>{},
   })  : audit = audit ?? const NullAuditSink(),
@@ -214,6 +219,12 @@ class AgentLoop {
   ///
   /// 为 null 时不注入任何额外文本 —— 循环本身不关心注入是怎么存的。
   final ContextAssembler? contextAssembler;
+
+  /// 宿主提供的流式调用能力。为 null 时退回 [ModelGateway.complete]。
+  ///
+  /// 有它界面上才能"边收边显示"；没有的话发出去之后要等整段回完才有动静，
+  /// 而推理模型一次要 20–30 秒（实测）。
+  final StreamingModelCall? streamingCall;
 
   /// **必须有上限。** 默认 8 轮。
   final int maxSteps;
@@ -233,11 +244,13 @@ class AgentLoop {
     required String userText,
     List<ChatMessage> history = const <ChatMessage>[],
     HookPhase donePhase = HookPhase.afterReply,
+    ModelDeltaCallback? onDelta,
   }) async {
     final ctx = AgentRunContext(
       sessionId: sessionId,
       systemPrompt: persona,
       messages: <ChatMessage>[...history, ChatMessage.user(userText)],
+      onDelta: onDelta,
     );
 
     await _runStep(AgentSteps.contextBuild, ctx);
@@ -351,10 +364,16 @@ class AgentLoop {
     final sw = Stopwatch()..start();
     final ModelReply reply;
     try {
-      reply = await gateway.complete(ModelRequest(
-        messages: wire,
-        tools: visibleTools,
-      ));
+      final request = ModelRequest(messages: wire, tools: visibleTools);
+
+      // 有流式能力就走流式 —— 推理模型一次要 20–30 秒，
+      // 非流式意味着用户对着静止的界面等半分钟。
+      final streamer = streamingCall;
+      final callback = ctx.onDelta;
+      reply = (streamer != null && callback != null)
+          ? await streamer(request, callback)
+          : await gateway.complete(request);
+
       sw.stop();
       audit.write(AuditEntry(
         pluginId: '__host__',

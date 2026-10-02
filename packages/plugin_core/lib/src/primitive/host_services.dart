@@ -183,6 +183,25 @@ abstract class ModelGateway {
   String get activeModel;
 }
 
+/// 流式增量回调。
+///
+/// **刻意用两个字符串而不是一个分片对象**：分片的具体形状是**协议细节**
+/// （OpenAI 有 `reasoning_content`、Anthropic 有 `thinking_delta`、
+/// Google 又是另一套）。内核不该知道这些，只需要"多了一段正文"和"多了一段思维链"。
+typedef ModelDeltaCallback = void Function(String? content, String? reasoning);
+
+/// 宿主提供的**流式**模型调用。
+///
+/// [ModelGateway.complete] 够用但要等整段回完才有动静 —— 界面上就是"发出去
+/// 之后界面静止十几秒"。所以宿主可以实现这个可选能力，[AgentLoop] 检测到就走它。
+///
+/// 传 null 表示宿主不支持流式，循环退回非流式路径。**两条路返回同一个类型**，
+/// 因此上层（工具循环、消息落库）不需要分支。
+typedef StreamingModelCall = Future<ModelReply> Function(
+  ModelRequest request,
+  ModelDeltaCallback onDelta,
+);
+
 // ─────────────────────────── 消息与上下文 ───────────────────────────
 
 /// 消息读写。`message.*` 与 `context.*` 用。

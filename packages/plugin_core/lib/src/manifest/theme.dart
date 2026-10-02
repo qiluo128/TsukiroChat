@@ -183,6 +183,9 @@ class TokenValidator {
         if (!RegExp(r'^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$').hasMatch(value)) {
           return '颜色格式非法（支持 #RGB / #RRGGBB / #RRGGBBAA），收到 "$value"';
         }
+        // 提醒：8 位形式是 CSS 语义 **#RRGGBBAA（alpha 在最后）**，
+        // 而 Flutter 的 Color(int) 是 AARRGGBB（alpha 在最前）。
+        // 宿主侧 parseHexColor 会做换算 —— 这里只校验格式，不做语义判断。
         return null;
 
       case TokenKind.size:

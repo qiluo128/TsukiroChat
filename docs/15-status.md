@@ -24,7 +24,9 @@
 | **工具链（Flutter/JDK/Android SDK）** | ✅ **已装并验证** | 共 10.1 GB；`app-debug.apk` 143.5 MB 构建成功 |
 | **Flutter 宿主工程** | ✅ 已创建 | `packages/host_app`，Flutter 3.47.6 + AGP 9.1.0 |
 | **Gradle 国内镜像** | ✅ 已配 | 不配的话 `maven.google.com` 超时，构建必失败 |
-| 聊天页（接入 `model_gateway`） | ⬜ 下一步 | Demo 流程 1 |
+| **聊天 UI** | ✅ **已完成** | 会话列表 + 聊天页（流式）+ 设置页；主题由设计令牌驱动 |
+| **本地持久化** | ✅ 已完成 | sqflite，表结构对齐 docs/10；重启不丢、可恢复被中断的流式消息 |
+| **真机可装** | ✅ APK 已构建 | `app-debug.apk` 149.8 MB |
 | WebView + Bridge 实际联通 | ⬜ 未开始 | 阶段 A3。**唯一还没被真实验证的一环** |
 | Demo 端到端 21 项验收（真机） | ⬜ 未开始 | 阶段 A4 |
 | WebView + Bridge 实际联通 | ⬜ 未开始 | 阶段 A3 |
@@ -108,6 +110,7 @@ $ dart test
 | 12 | 凭据扫描器在 TLS 失败时报"未发现凭据" | **高（假阴性）** | `raw.githubusercontent.com` 在本机 TLS 校验失败，每个请求静默返回 null，扫描器于是报"通过"。**fail-open 的检查比没有检查更危险**——它给的是错误的信心。已改为 fail-closed |
 | 13 | **Gradle 拒绝项目级仓库 + 镜像顺序不对** | **高（构建必失败）** | `init.gradle` 里 `allprojects { repositories }` 被新版 Gradle 的 `PREFER_SETTINGS` 拒绝；而且 `settingsEvaluated` 里**追加**是排在后面的，仍然先撞超时的 `google()`。**配置看起来生效了但构建照样卡住** —— 必须改 settings 层的声明顺序并放最前 |
 | 14 | **PowerShell 把原生命令的 stderr 当错误** | 中（反复踩） | `$ErrorActionPreference='Stop'` 会把 flutter/git/java 写在 stderr 的**正常进度**升级成终止错误，于是"命令成功了脚本却报错"。本项目踩了四次，已固化成 `Invoke-Native` 工具函数（只依据 `$LASTEXITCODE` 判断成败） |
+| 15 | **`#RRGGBBAA` 与 `AARRGGBB` 字节序不同** | 中（视觉难查） | CSS 的 8 位十六进制 alpha 在**最后**，Flutter 的 `Color(int)` alpha 在**最前**。直接把 8 位串丢给 `Color()` 会让 alpha 与 red 串位 —— 颜色"看着差不多但不对"，极难定位。修的时候还修过头一次（6 位补 alpha 后又走 8 位换序逻辑），测试两次都抓到了 |
 
 **其中 1–3 都是 fail-open 方向的缺陷** —— 如果不写这几条测试，权限系统会静默失效而没人发现。这正好验证了 ADR-009「先做纯 Dart 内核 + 单测」的判断：这些问题在 Flutter + Android + WebView 混合环境里几乎不可能定位。
 

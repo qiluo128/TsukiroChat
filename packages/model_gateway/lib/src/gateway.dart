@@ -107,6 +107,30 @@ class HttpModelGateway implements ModelGateway {
     return accumulator.finish();
   }
 
+  /// 签名匹配 `plugin_core.StreamingModelCall` 的版本。
+  ///
+  /// 内核**刻意不认识** [StreamDelta] —— 那是协议细节（OpenAI 的
+  /// `reasoning_content`、Anthropic 的 `thinking_delta`、Google 又是另一套）。
+  /// 所以这里把增量"拆平"成两个字符串回调出去，内核只关心"多了一段正文/
+  /// 多了一段思维链"。
+  ///
+  /// 用法：`AgentLoop(streamingCall: gateway.completeStreamingForLoop)`
+  Future<ModelReply> completeStreamingForLoop(
+    ModelRequest request,
+    void Function(String? content, String? reasoning) onDelta,
+  ) async {
+    final accumulator = StreamAccumulator();
+    await for (final delta in streamDeltas(request)) {
+      accumulator.add(delta);
+      final hasContent = delta.content?.isNotEmpty ?? false;
+      final hasReasoning = delta.reasoning?.isNotEmpty ?? false;
+      if (hasContent || hasReasoning) {
+        onDelta(delta.content, delta.reasoning);
+      }
+    }
+    return accumulator.finish();
+  }
+
   /// `plugin_core.ModelGateway` 要求的纯文本流。
   @override
   Stream<String> stream(ModelRequest request) async* {
