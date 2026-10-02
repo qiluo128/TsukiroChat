@@ -128,19 +128,40 @@ class ModelRequest {
 class ModelReply {
   const ModelReply({
     required this.text,
+    this.reasoning,
     this.toolCalls = const <ToolCall>[],
     this.promptTokens = 0,
     this.completionTokens = 0,
     this.finishReason,
+    this.extra = const <String, dynamic>{},
   });
 
   final String text;
+
+  /// 推理模型的思维链（`reasoning_content`）。
+  ///
+  /// 与 [text] **分开保存**是刻意的：思维链通常很长且不该直接展示给用户，
+  /// 但丢掉它又会让"模型为什么这么答"无从排查。UI 可以折叠显示。
+  final String? reasoning;
+
   final List<ToolCall> toolCalls;
   final int promptTokens;
   final int completionTokens;
   final String? finishReason;
 
+  /// 供应商/中转站塞的私有字段（如 `cost_cny`、`trace_id`）。
+  ///
+  /// 内核不解释，原样带给宿主 —— 中转站的计费与追踪信息对运营有用，
+  /// 在解析层丢掉就再也拿不回来了。
+  final Map<String, dynamic> extra;
+
   bool get hasToolCalls => toolCalls.isNotEmpty;
+
+  @override
+  String toString() =>
+      'ModelReply(${text.length} 字符'
+      '${reasoning == null ? '' : ', 思维链 ${reasoning!.length} 字符'}'
+      ', ${toolCalls.length} 次工具调用)';
 }
 
 /// 模型网关。

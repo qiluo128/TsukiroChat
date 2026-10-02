@@ -45,12 +45,16 @@ export 'src/common/semver.dart';
 // ── 插件描述与包 ──
 export 'src/manifest/manifest.dart';
 export 'src/manifest/parser.dart';
+export 'src/packaging/installer.dart';
 export 'src/packaging/package_inspector.dart';
 export 'src/packaging/zip_reader.dart';
 
 // ── 权限 ──
 export 'src/permission/gatekeeper.dart';
 export 'src/permission/permission.dart';
+
+// ── 宿主侧实现参考（纯 Dart，可在无头环境跑） ──
+export 'src/host/in_memory_services.dart';
 
 // ── 能力轴 ──
 export 'src/primitive/demo_primitives.dart';
@@ -65,6 +69,7 @@ export 'src/primitive/service_registry.dart';
 export 'src/hook/hook_bus.dart';
 
 // ── 注册表 ──
+export 'src/registry/slot_registry.dart';
 export 'src/registry/tool_registry.dart';
 
 // ── 沙箱 ──
@@ -72,3 +77,4 @@ export 'src/sandbox/path_guard.dart';
 
 // ── 传输 ──
 export 'src/bridge/envelope.dart';
+export 'src/bridge/session.dart';

@@ -28,7 +28,7 @@ cd packages\plugin_core
 & ..\..\scripts\dart.ps1 test       # 需要一次性 danger-full-access 提权
 ```
 
-当前状态：**299 个单测全绿，`dart analyze` 零问题。**
+当前状态：**349 个单测全绿，`dart analyze` 零问题。**
 
 ## 模块地图
 

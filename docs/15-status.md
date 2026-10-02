@@ -1,4 +1,4 @@
-# 15 · 当前进度与验证报告
+﻿# 15 · 当前进度与验证报告
 
 > 最后更新：本轮工作结束时。**这里的「已验证」都是本机真实跑出来的结果，不是计划。**
 
@@ -10,7 +10,7 @@
 |---|---|---|
 | 需求整理成文档体系 | ✅ 完成 | `docs/` 下 16 篇（含索引） |
 | 开发环境准备（Dart SDK） | ✅ 完成 | `C:\dev\dart-sdk`，Dart 3.12.2 |
-| 插件内核骨架（纯 Dart） | ✅ 已跑通 | `packages/plugin_core`，**299 个单测全绿，1 个刻意跳过** |
+| 插件内核骨架（纯 Dart） | ✅ 已跑通 | `packages/plugin_core`，**349 个单测全绿，1 个刻意跳过** |
 | 静态分析 | ✅ 零问题 | `dart analyze` → `No issues found!` |
 | **Demo 可行性验证（无头）** | ✅ **四条流程全通** | `test/demo_e2e_test.dart`，含安全约束与可扩展性 |
 | **原语 / 钩子可扩展性** | ✅ 已落地 | 24 域 112 条原语全量注册；钩子总线含错误隔离与超时 |
@@ -46,7 +46,7 @@ Analyzing plugin_core...
 No issues found!
 
 $ dart test
-00:00 +299 ~1: All tests passed!
+00:00 +349 ~1: All tests passed!
 ```
 
 （`~1` 是一个刻意跳过的用例：`ui.navigate` 仍是占位原语，跳过它正是"未实现 = UNSUPPORTED"的预期状态。）
@@ -124,25 +124,28 @@ dev.tsukiro.time-1.0.0-MALICIOUS.zip  2.6 KB  ← 含 ../evil-traversal.txt，�
 
 | # | 任务 | 依赖 | 说明 |
 |---|---|---|---|
-| ~~1~~ | ~~`bridge` 编解码~~ | — | ✅ **已完成**（`src/bridge/envelope.dart`） |
-| ~~2~~ | ~~`packaging` 包检查~~ | — | ✅ **已完成**（`package_inspector.dart` + `zip_reader.dart`） |
-| ~~3~~ | ~~`audit` + redactor~~ | — | ✅ **已完成**（`src/audit/audit.dart`） |
-| ~~4~~ | ~~原语注册表与钩子总线~~ | — | ✅ **已完成**（`primitive_registry.dart` / `hook_bus.dart` / 全量目录） |
-| ~~5~~ | ~~无头 demo 可行性验证~~ | — | ✅ **已完成**（`test/demo_e2e_test.dart`，四条流程全通） |
-| 6 | `registry/slot_registry` + `page_registry` | — | 插槽表与页面表。**这是新增 `chat.message.after` 的前置**，也是 `slot.list` 自省原语的前置 |
-| 7 | `packaging/installer.dart` | 2 | 安装状态机与磁盘原子性（先解压到临时目录再 rename） |
-| 8 | `bridge/session.dart` | 1 | 握手门禁 `bridge.hello` / `bridge.ready`、WebView 实例绑定校验 |
-| 9 | `context` / `message` / `schedule` 的接口实现 | 4 | 内核侧接口已定（`ContextSink` / `MessageStore` / `HostScheduler`），差纯 Dart 参考实现与单测 |
-| 10 | `provides.theme` 解析为强类型（L1 设计令牌） | — | 令牌白名单 + 未知令牌名拒绝 |
-| 11 | `layout` / `replaces` 写进 manifest schema（不执行） | — | NFR-COMP-01：字段一次留全 |
-| 12 | Flutter 宿主项目初始化 | 需装 Flutter | `flutter create --platforms=android` |
-| 13 | 聊天页 + Drift + Dio SSE | 12 | Demo 流程 1 |
-| 14 | Android SDK + 真机/模拟器 | 12 | 需 ≥ 15 GB 磁盘，建议真机 |
-| 15 | WebView 容器 + Bridge 落地 | 8, 13 | 阶段 A3。**在此之前 `headless_host.dart` 的桩要换成真的 JS 运行时** |
-| 16 | 端到端 21 项验收（真机） | 全部 | 阶段 A4 |
+| ~~1~~ | ~~`bridge` 编解码~~ | — | ✅ **已完成** |
+| ~~2~~ | ~~`packaging` 包检查~~ | — | ✅ **已完成** |
+| ~~3~~ | ~~`audit` + redactor~~ | — | ✅ **已完成** |
+| ~~4~~ | ~~原语注册表与钩子总线~~ | — | ✅ **已完成** |
+| ~~5~~ | ~~无头 demo 可行性验证~~ | — | ✅ **已完成**，四条流程全通 |
+| ~~6~~ | ~~`slot_registry` + 页面表~~ | — | ✅ **已完成**。未知插槽静默忽略、权限撤销即隐藏控件 |
+| ~~7~~ | ~~`installer` 状态机与磁盘原子性~~ | — | ✅ **已完成**。staging → commit，任一步失败即回滚、不留残留 |
+| ~~8~~ | ~~`bridge/session` 握手门禁~~ | — | ✅ **已完成**。实例绑定、握手门禁、原语路由 |
+| ~~9~~ | ~~`context`/`message`/`schedule` 参考实现~~ | — | ✅ **已完成**（`host/in_memory_services.dart`） |
+| ~~10~~ | ~~多协议模型接入层~~ | — | ✅ **已完成**（`packages/model_gateway`）。OpenAI / Anthropic / Google + 模型表 |
+| ~~11~~ | ~~真实 API 接入验证~~ | — | ✅ **已完成**，8 项全通（见 [17-model-access](17-model-access.md)） |
+| 12 | `provides.theme` 解析为强类型（L1 设计令牌） | — | 令牌白名单 + 未知令牌名拒绝 |
+| 13 | `layout` / `replaces` 写进 manifest schema（不执行） | — | NFR-COMP-01：字段一次留全 |
+| 14 | 把无头宿主的桩换成真实实现 | — | `PluginRuntimeStub` → WebView + JS |
+| 15 | Flutter 宿主项目初始化 | 需装 Flutter | `flutter create --platforms=android` |
+| 16 | 聊天页 + Drift + SSE 流式 | 15 | Demo 流程 1。**模型调用直接复用 `model_gateway`** |
+| 17 | Android SDK + 真机/模拟器 | 15 | 需 ≥ 15 GB 磁盘，建议真机 |
+| 18 | WebView 容器 + Bridge 落地 | 8, 16 | 阶段 A3 |
+| 19 | 端到端 21 项验收（真机） | 全部 | 阶段 A4 |
 
-**建议**：6–11 全部仍是纯 Dart、可单测。做完再决定 Flutter + Android SDK 那次 6–8 GB 下载 —— 那样即使环境准备受阻，插件内核与 Demo 逻辑都已经是完整可信的。
-
+**建议**：12–14 仍是纯 Dart、可单测。做完再决定 Flutter + Android SDK 那次 6–8 GB 下载 ——
+那样即使环境准备受阻，插件内核、宿主层、模型接入三块都已经是完整可信的。
 > **无头验证台的边界**：`test/support/headless_host.dart` 能证明**架构成立**，
 > 不能证明「WebView 能跑 JS」。后者只有真机验证，是阶段 A3 的事。
 > 详见该文件顶部的说明。

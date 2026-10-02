@@ -1,0 +1,17 @@
+name: model_gateway
+description: >-
+  多协议模型接入层 —— OpenAI / Anthropic / Google 三套线格式，含中转站模型表拉取、
+  SSE 流式解析、工具调用分片拼接。纯 Dart，可脱离 Flutter 单测，也可直接连真实 API。
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  plugin_core:
+    path: ../plugin_core
+
+dev_dependencies:
+  lints: ^4.0.0
+  test: ^1.25.0
