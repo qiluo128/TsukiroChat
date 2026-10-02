@@ -1,47 +1,46 @@
-/// 真实 API 的连通性验证（默认跳过）。
+﻿/// 真实 API 的连通性验证（无配置时自动跳过）。
 ///
 /// **这是唯一一个会真的发网络请求、真的消耗 token 的测试。**
-/// 所以它默认跳过，必须显式开启：
+///
+/// 配置来源，按优先级：
+///   1. 环境变量 `TSUKIRO_LIVE_BASE` / `TSUKIRO_LIVE_KEY` / `TSUKIRO_LIVE_MODEL`
+///   2. `dev/dev-config.json`（gitignored，本地开发用）
+///
+/// 两者都没有时整个文件跳过，**不会失败** —— CI 上不配任何东西也能跑。
 ///
 /// ```powershell
-/// $env:TSUKIRO_LIVE_BASE='http://103.236.91.136:52165/v1'
-/// $env:TSUKIRO_LIVE_KEY='sk-...'
-/// $env:TSUKIRO_LIVE_MODEL='deepseek-v4.1-flash'
-/// & ..\..\scripts\dart.ps1 test test\live_api_test.dart --run-skipped
+/// # 最省事：先建一次本地配置，之后直接跑
+/// Copy-Item dev\dev-config.example.json dev\dev-config.json   # 填 apiKey
+/// & .\scripts\run_live_test.ps1
 /// ```
 ///
-/// 凭据只从环境变量读，**绝不写进文件、绝不打印**。
+/// key 只在内存里流转，**不打印、不落盘**（配置文件的读取见 `support/live_config.dart`）。
 library;
-
-import 'dart:io';
 
 import 'package:model_gateway/model_gateway.dart';
 import 'package:plugin_core/plugin_core.dart';
 import 'package:test/test.dart';
 
-final String liveBase = Platform.environment['TSUKIRO_LIVE_BASE'] ?? '';
-final String liveKey = Platform.environment['TSUKIRO_LIVE_KEY'] ?? '';
-final String liveModel = Platform.environment['TSUKIRO_LIVE_MODEL'] ?? '';
+import 'support/live_config.dart';
 
-final bool hasCredentials = liveBase.isNotEmpty && liveKey.isNotEmpty;
+/// 加载到的配置；null 表示没配 → 全部跳过。
+final LiveConfig? liveConfig = loadLiveConfig();
 
 void main() {
-  final skipReason = hasCredentials
-      ? null
-      : '未提供 TSUKIRO_LIVE_BASE / TSUKIRO_LIVE_KEY —— 这是默认行为，'
-          '真实 API 测试需要显式开启（见文件头说明）';
+  final skipReason = liveConfig == null
+      ? '没有真实 API 配置（环境变量或 dev/dev-config.json 皆无）—— 默认行为'
+      : null;
 
-  group('真实 API（消耗 token，默认跳过）', () {
+  if (liveConfig != null) {
+    // ignore: avoid_print
+    print('真实 API 配置：${liveConfig!.summary}');
+  }
+
+  group('真实 API（消耗 token，需配置）', () {
     late HttpModelGateway gateway;
 
     setUp(() {
-      gateway = HttpModelGateway(
-        config: ProviderConfig.openAiCompat(
-          baseUrl: liveBase,
-          apiKey: liveKey,
-          defaultModel: liveModel.isEmpty ? null : liveModel,
-        ),
-      );
+      gateway = HttpModelGateway(config: liveConfig!.provider);
     });
 
     tearDown(() => gateway.close());
@@ -207,7 +206,7 @@ void main() {
     test('⑦ 错误的 key 会被识别为鉴权失败（不是静默失败）', () async {
       final bad = HttpModelGateway(
         config: ProviderConfig.openAiCompat(
-          baseUrl: liveBase,
+          baseUrl: liveConfig!.provider.normalizedBaseUrl,
           // 必须是纯 ASCII —— HTTP 头字段不允许非 ASCII 字符，
           // 用一个中文 key 会在**发请求之前**就抛 FormatException，
           // 于是测不到"服务端如何拒绝鉴权"这件事

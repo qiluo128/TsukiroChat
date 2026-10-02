@@ -43,3 +43,9 @@ Desktop.ini
 *.key
 *.pem
 secrets/
+
+# 本地开发配置（含真实 API Key）。模板 dev-config.example.json 是提交的。
+# 注意：一旦某个含密钥的文件被提交过，删掉它并不能从 git 历史里移除 ——
+# 只能轮换密钥。见 dev/README.md。
+dev/dev-config.json
+dev/*.local.json

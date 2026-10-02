@@ -134,12 +134,48 @@ final config = ProviderConfig(
 跑真实 API 测试：
 
 ```powershell
-$env:TSUKIRO_LIVE_BASE='http://103.236.91.136:52165/v1'
-$env:TSUKIRO_LIVE_KEY='sk-...'
-$env:TSUKIRO_LIVE_MODEL='deepseek-v4.1-flash'
-cd packages\model_gateway
-& ..\..\scripts\dart.ps1 test test\live_api_test.dart --reporter=expanded
+# 首次：建本地配置（已 gitignore），之后不用再设任何环境变量
+Copy-Item dev\dev-config.example.json dev\dev-config.json   # 填入 apiKey
+
+& .\scripts\run_live_test.ps1              # 跑真实 API
+& .\scripts\run_live_test.ps1 -WithOffline # 顺带跑离线测试
 ```
+
+**配置来源优先级：环境变量 > `dev/dev-config.json` > 无（跳过）**。
+都没有时整个文件跳过，**不会失败** —— CI 上不配任何东西也能跑通。
+
+### 为什么真 Key 不提交
+
+仓库是 public 的。把 Key 写进被提交的文件意味着：
+
+1. GitHub 密钥扫描几分钟内标记它（可能自动吊销）
+2. 爬虫持续扫 GitHub，捞到就消耗额度
+3. **删掉文件不等于删掉密钥** —— git 历史里还在
+
+所以真实配置放 `dev/dev-config.json`（gitignore），仓库只提交
+`dev/dev-config.example.json` 模板。**便利性完全一样**（脚本自动读，不用设环境变量），
+区别只是不公开。
+
+### Android 侧复用同一份配置
+
+同一份 JSON 直接放进 Flutter 工程的 assets：
+
+```yaml
+# pubspec.yaml
+flutter:
+  assets:
+    - assets/dev-config.json
+```
+
+```dart
+final raw = await rootBundle.loadString('assets/dev-config.json');
+final config = ProviderConfig.fromJson(jsonDecode(raw)['provider']);
+```
+
+`ProviderConfig.fromJson` / `toJson` 就是为这个场景准备的（设置页持久化也用它）。
+
+⚠️ **打包发给用户时务必去掉这个 asset。** 正式版走网关（用户 Token），
+客户端不该带任何上游 Key —— 这是设计红线（原则 4）。
 
 ---
 

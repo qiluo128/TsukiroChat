@@ -1,0 +1,26 @@
+{
+  "_说明": "复制本文件为 dev-config.json 并填入真实值。dev-config.json 已被 gitignore，不会进版本控制。",
+  "_用途": "本地开发与真实 API 测试。Android 侧后续把同一份文件放进 assets/ 即可复用。",
+
+  "provider": {
+    "protocol": "openai",
+    "baseUrl": "http://103.236.91.136:52165/v1",
+    "apiKey": "<在这里填 sk-...>",
+    "defaultModel": "deepseek-v4.1-flash",
+    "displayName": "测试中转站"
+  },
+
+  "_候选模型": [
+    "deepseek-flash",
+    "deepseek-v4-flash",
+    "deepseek-v4-flash-0731",
+    "deepseek-v4-pro",
+    "deepseek-v4-pro-0813",
+    "deepseek-v4.1-flash"
+  ],
+
+  "_注意": [
+    "deepseek-v4.1-flash 是推理模型：max_tokens 包含思维链，给太小会导致正文为空",
+    "非流式 + 大 token 预算一次要 20-30 秒，宿主必须默认用流式"
+  ]
+}

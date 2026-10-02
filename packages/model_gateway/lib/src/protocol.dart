@@ -94,6 +94,42 @@ class ProviderConfig {
   /// 是否能用于发起请求。
   bool get isUsable => normalizedBaseUrl.isNotEmpty && apiKey.isNotEmpty;
 
+  /// 序列化。**注意这会带上 apiKey 原文。**
+  ///
+  /// 只用于本地持久化（设置页保存、Android 的 dev asset）。
+  /// 任何会离开设备的场景（日志、审计、Bridge、上报）都不得使用它。
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'protocol': protocol.name,
+        'baseUrl': baseUrl,
+        if (apiKey.isNotEmpty) 'apiKey': apiKey,
+        if (defaultModel != null) 'defaultModel': defaultModel,
+        if (displayName != null) 'displayName': displayName,
+        if (anthropicVersion != '2023-06-01') 'anthropicVersion': anthropicVersion,
+        if (extraHeaders.isNotEmpty) 'extraHeaders': extraHeaders,
+        if (timeout != const Duration(seconds: 120)) 'timeoutMs': timeout.inMilliseconds,
+      };
+
+  /// 从 JSON 还原。字段缺失时用合理默认值，**不抛异常** ——
+  /// 配置文件是用户手写的，一个拼错的字段不该让整个设置页打不开。
+  factory ProviderConfig.fromJson(Map<String, dynamic> json) {
+    final rawTimeout = json['timeoutMs'];
+    final headers = json['extraHeaders'];
+    return ProviderConfig(
+      protocol: ProviderProtocol.parse(json['protocol']?.toString()),
+      baseUrl: json['baseUrl']?.toString() ?? '',
+      apiKey: json['apiKey']?.toString() ?? '',
+      defaultModel: json['defaultModel']?.toString(),
+      anthropicVersion: json['anthropicVersion']?.toString() ?? '2023-06-01',
+      extraHeaders: headers is Map
+          ? headers.map((k, v) => MapEntry('$k', '$v'))
+          : const <String, String>{},
+      timeout: rawTimeout is num
+          ? Duration(milliseconds: rawTimeout.toInt())
+          : const Duration(seconds: 120),
+      displayName: json['displayName']?.toString(),
+    );
+  }
+
   /// 打码后的 key，**只用于日志**。
   String get maskedKey {
     if (apiKey.length <= 8) return '***';
