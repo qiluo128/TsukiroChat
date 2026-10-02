@@ -70,20 +70,45 @@ function api(path) {
   });
 }
 
-/** 取文件原文（raw 不走 API 配额）。 */
-function raw(path) {
+/**
+ * 取文件原文。
+ *
+ * **走 GitHub API 而不是 raw.githubusercontent.com**：本机对 raw 域名的
+ * TLS 校验会失败（中间人证书，报 UNABLE_TO_VERIFY_LEAF_SIGNATURE），
+ * 而 api.github.com 用 `--use-system-ca` 是通的。
+ *
+ * 这个区别很关键：第一版走 raw，每个请求都静默返回 null，扫描器于是报
+ * "未发现凭据" —— 一个**假阴性**。失败的开着（fail-open）的扫描器比没有更危险，
+ * 因为它给的是错误的信心。所以下面 `scanned == 0` 会被判为扫描失败，而不是通过。
+ */
+function fetchFile(path) {
   return new Promise((resolve) => {
     const req = https.get(
       {
-        hostname: 'raw.githubusercontent.com',
-        path: `/${REPO}/HEAD/${path}`,
-        headers: { 'User-Agent': 'tsukiro-secret-scan' },
+        hostname: 'api.github.com',
+        path: `/repos/${REPO}/contents/${encodeURI(path)}`,
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'tsukiro-secret-scan',
+          ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+        },
       },
       (res) => {
-        if (res.statusCode !== 200) { res.resume(); return resolve(null); }
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
-        res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        res.on('end', () => {
+          if (res.statusCode !== 200) return resolve(null);
+          try {
+            const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            if (body.encoding !== 'base64' || typeof body.content !== 'string') {
+              return resolve(null);
+            }
+            resolve(Buffer.from(body.content, 'base64').toString('utf8'));
+          } catch {
+            resolve(null);
+          }
+        });
       },
     );
     req.on('error', () => resolve(null));
@@ -121,11 +146,16 @@ const textish = blobs.filter((b) =>
 
 let findings = 0;
 let scanned = 0;
+let failedFetches = 0;
+
 for (const b of textish) {
   if (b.size > 512 * 1024) continue; // 大文件跳过，避免拖慢
   if (b.path === SELF) continue; // 自身跳过，见 SELF 的说明
-  const content = await raw(b.path);
-  if (content == null) continue;
+  const content = await fetchFile(b.path);
+  if (content == null) {
+    failedFetches++;
+    continue;
+  }
   scanned++;
 
   for (const { name, re } of PATTERNS) {
@@ -140,7 +170,18 @@ for (const b of textish) {
   }
 }
 
-console.log(`   已扫描 ${scanned} 个文本文件`);
+console.log(`   已扫描 ${scanned} 个文本文件` +
+  (failedFetches > 0 ? `，${failedFetches} 个取不到` : ''));
+
+// **fail-closed**：一个都没扫到，说明是扫描本身坏了，不是仓库干净。
+// 绝不能在这种情况下报"通过" —— 那给的是一份错误的安心。
+if (scanned === 0) {
+  console.log('   ✗ 扫描失败：没有任何文件被读到（网络/鉴权问题），无法给出结论');
+  console.log('\n结论：');
+  console.log('  ? 扫描未完成，请不要据此认为仓库是干净的。');
+  process.exit(2);
+}
+
 if (findings === 0) {
   console.log('   ✓ 未发现凭据');
 }
