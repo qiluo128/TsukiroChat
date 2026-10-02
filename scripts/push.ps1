@@ -88,11 +88,20 @@ try {
 
   if ($code -ne 0) {
     Write-Host ''
-    Write-Host '✗ 推送失败。常见原因：' -ForegroundColor Red
-    Write-Host '  403 Permission denied → 细粒度 PAT 的 Contents 权限是 Read-only'
-    Write-Host '     修法: https://github.com/settings/personal-access-tokens'
-    Write-Host '           编辑该 token → Repository permissions → Contents = Read and write'
-    Write-Host '           （只需改权限，token 值不变，不用重新生成）'
+    Write-Host '✗ 推送失败。按错误特征对照：' -ForegroundColor Red
+    Write-Host ''
+    Write-Host '  【GH013 / Push Protection / "Push cannot contain secrets"】'
+    Write-Host '    提交里含被 GitHub 识别为凭据的内容，被服务端拦下（不是本地问题）。'
+    Write-Host '    修法：把凭据从文件里去掉 —— 不要用 GitHub 给的 allow 链接放行，'
+    Write-Host '          放行等于把密钥永久留在公开历史里。改完 amend 再推。'
+    Write-Host ''
+    Write-Host '  【403 Permission denied】'
+    Write-Host '    细粒度 PAT 的 Contents 权限是 Read-only。'
+    Write-Host '    修法: https://github.com/settings/personal-access-tokens'
+    Write-Host '          编辑该 token → Repository permissions → Contents = Read and write'
+    Write-Host '          （只需改权限，token 值不变，不用重新生成）'
+    Write-Host ''
+    Write-Host '  【401 Bad credentials】token 无效或已过期。'
     exit 1
   }
 
