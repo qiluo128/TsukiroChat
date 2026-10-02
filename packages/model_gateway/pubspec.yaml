@@ -13,6 +13,7 @@ dependencies:
     path: ../plugin_core
 
 dev_dependencies:
+  archive: ^3.6.1
   # 测试辅助里要拼仓库根路径
   path: ^1.9.0
   lints: ^4.0.0

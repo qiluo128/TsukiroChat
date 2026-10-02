@@ -211,8 +211,11 @@ void main() {
         final manifest = parsed.manifest!;
 
         // 4. 声明的文件确实都在包里
-        expect(archive.paths, contains(manifest.runtime.main),
-            reason: '入口文件缺失');
+        // 入口文件必须真的在包里（零代码插件没有入口，跳过这一项）
+        final runtime = manifest.runtime;
+        if (runtime != null) {
+          expect(archive.paths, contains(runtime.main), reason: '入口文件缺失');
+        }
         for (final tool in manifest.tools) {
           expect(archive.paths, contains(tool.handler),
               reason: '工具 ${tool.name} 的 handler 缺失');

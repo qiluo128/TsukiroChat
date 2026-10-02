@@ -221,6 +221,16 @@ abstract class ContextSink {
   Future<int> currentBytes(String pluginId);
 }
 
+/// 能把注入组装成最终文本的上下文源。
+///
+/// 与 [ContextSink] 分开是因为职责不同：前者是**写入接口**（原语用），
+/// 后者是**读取接口**（Agent 循环用）。Flutter 宿主可以用同一个对象实现两者，
+/// 但循环只依赖这一个方法，因此不必知道注入是怎么存的。
+abstract class ContextAssembler {
+  /// 组装最终要拼进 system prompt 的文本；没有注入时返回空串。
+  String buildInjection();
+}
+
 // ─────────────────────────── 调度 ───────────────────────────
 
 /// 后台任务调度。`schedule.*` 用。

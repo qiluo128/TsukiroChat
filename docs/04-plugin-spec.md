@@ -84,7 +84,10 @@ time-plugin-1.0.0.zip
   "minHostVersion": "0.1.0",               // 宿主低于此版本拒绝安装
   "hostApi": "^1.0.0",                     // 宿主原语 API 版本范围
 
-  // ───────── 运行时（必需） ─────────
+  // ───────── 运行时（**纯声明式插件可整体省略**） ─────────
+  // 美化包 / 人设包 / Skills 这类 L1 插件没有代码，不需要 runtime。
+  // 反之：声明了 tools / ui / pages / layout / replaces / harness 就必须有 runtime，
+  // 因为那些能力要靠代码实现（控件 onClick 要有人接）。宿主解析器与打包脚本都会强制这一点。
   "runtime": {
     "main": "index.js",                    // 默认 "index.js"
     "type": "module",                      // "module" | "classic"，默认 module

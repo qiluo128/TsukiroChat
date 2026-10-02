@@ -45,6 +45,7 @@ export 'src/common/semver.dart';
 // ── 插件描述与包 ──
 export 'src/manifest/manifest.dart';
 export 'src/manifest/parser.dart';
+export 'src/manifest/theme.dart';
 export 'src/packaging/installer.dart';
 export 'src/packaging/package_inspector.dart';
 export 'src/packaging/zip_reader.dart';
@@ -54,6 +55,7 @@ export 'src/permission/gatekeeper.dart';
 export 'src/permission/permission.dart';
 
 // ── 宿主侧实现参考（纯 Dart，可在无头环境跑） ──
+export 'src/host/agent_loop.dart';
 export 'src/host/in_memory_services.dart';
 
 // ── 能力轴 ──

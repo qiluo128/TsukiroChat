@@ -114,11 +114,32 @@ void main() {
       });
     }
 
-    test('缺少 runtime 被拒', () {
+    test('省略 runtime 对纯声明式插件合法（L1 零代码）', () {
       final json = base()..remove('runtime');
       final r = parseManifest(json);
-      expect(r.isValid, isFalse);
-      expect(r.issues.map((e) => e.path), contains('runtime'));
+      expect(r.isValid, isTrue, reason: r.issues.map((e) => e.toString()).join('; '));
+      expect(r.manifest!.isZeroCode, isTrue);
+    });
+
+    test('声明了需要代码的能力却没有 runtime 被拒', () {
+      for (final entry in <String, Object>{
+        'tools': <dynamic>[
+          <String, dynamic>{'name': 't', 'description': 'x', 'handler': 'h.js'},
+        ],
+        'ui': <dynamic>[
+          <String, dynamic>{'slot': 'chat.toolbar', 'id': 't', 'type': 'button', 'label': 'T'},
+        ],
+        'pages': <dynamic>[
+          <String, dynamic>{'id': 'p', 'title': 'P', 'entry': 'a.html'},
+        ],
+      }.entries) {
+        final json = base()..remove('runtime');
+        json['provides'] = <String, dynamic>{entry.key: entry.value};
+        final r = parseManifest(json);
+        expect(r.isValid, isFalse, reason: '${entry.key} 应要求 runtime');
+        expect(r.issues.map((e) => e.path), contains('runtime'));
+        expect(r.issues.first.message, contains(entry.key));
+      }
     });
 
     test('runtime 缺少 main 被拒', () {
@@ -513,7 +534,7 @@ void main() {
       expect(r.isValid, isFalse);
     });
 
-    test('预留段（overlays/skills/themes/personas/mcp/memory）原样保留', () {
+    test('预留段（overlays/skills/personas/mcp/memory/layout/replaces/data）原样保留', () {
       final m = parseManifest(withProvides(<String, dynamic>{
         'overlays': <dynamic>[
           <String, dynamic>{'id': 'ball', 'entry': 'pages/ball.html'},
@@ -521,18 +542,39 @@ void main() {
         'skills': <dynamic>[
           <String, dynamic>{'id': 'polite'},
         ],
-        'themes': <dynamic>[
-          <String, dynamic>{'id': 'sakura'},
-        ],
         'personas': <dynamic>[
           <String, dynamic>{'id': 'yuki'},
         ],
         'mcp': <String, dynamic>{'servers': <dynamic>[]},
         'memory': <String, dynamic>{'provider': 'memory/index.js'},
+        'layout': <String, dynamic>{'mode': 'compact'},
+        'replaces': <String, dynamic>{
+          'ui': <dynamic>['chat.main'],
+        },
+        'data': <String, dynamic>{'messages': true},
       })).manifest!;
       expect(m.provides.rawReserved.keys, containsAll(<String>[
-        'overlays', 'skills', 'themes', 'personas', 'mcp', 'memory',
+        'overlays', 'skills', 'personas', 'mcp', 'memory',
+        'layout', 'replaces', 'data',
       ]));
+      // 预留段虽然不执行，但要有明确的访问器
+      expect(m.provides.layout!['mode'], 'compact');
+      expect(m.provides.declaresLayout, isTrue);
+      expect(m.provides.declaresReplacements, isTrue);
+      expect(m.provides.replaces!['ui'], <dynamic>['chat.main']);
+    });
+
+    test('theme 不再是原始保留段，而是强类型', () {
+      final m = parseManifest(withProvides(<String, dynamic>{
+        'theme': <String, dynamic>{
+          'id': 'sakura',
+          'name': '樱花',
+          'tokens': <String, dynamic>{'color.primary': '#FF6B9D'},
+        },
+      })).manifest!;
+      expect(m.provides.rawReserved.containsKey('theme'), isFalse);
+      expect(m.themes, hasLength(1));
+      expect(m.themes.single.id, 'sakura');
     });
 
     test('harness 字段放行且不产生注册项', () {

@@ -64,6 +64,34 @@ Gemini 侧无法区分**。多轮同名调用不受影响（顺序一致）。
 | 响应里有 `cost_cny` / `trace_id` / `reasoning_available` | 中转站私有字段，**必须原样保留**，解析层丢掉就再也拿不回来 |
 | 错误 key → `401 Invalid API key` | 鉴权失败能被正确分类为 `auth`，不是静默失败 |
 
+### 3.2 真模型端到端抓到的两个缺陷
+
+跑 `real_model_e2e_test.dart`（真模型 + 真插件 + 真原语）时暴露的，**离线测试 373 个全绿也发现不了**：
+
+**① `tool_calls[].function.arguments` 必须是 JSON 字符串，不能是对象**
+
+```
+400: The parameter `messages.tool_calls.function.arguments` are not valid:
+     expected a string, but got `{}` instead
+```
+
+这个格式怪癖的根源是**流式**：参数是按字符分片推送的，所以线上表示只能是字符串。
+离线假网关不校验，传对象也能跑通 —— 只有接真 API 才会 400。
+
+修法：`ToolCall.toJson()` 里 `jsonEncode(arguments)`；收端 `fromOpenAi` 两种都接受。
+
+**② AgentLoop 自己的模型调用没写审计**
+
+宿主的调用不经过 `PrimitiveRegistry`，很容易被当成"内部操作"而不记账。
+但它**真的在消耗用户的点数** —— 漏了它，账单就无法与网关对账，
+出问题也查不到"钱花在哪一轮"。
+
+修法：按 `docs/06` §8.3 的约定，宿主调用记 `pluginId = '__host__'`，
+并记录轮数、工具调用次数、token 用量。
+
+> **这两条的共同点**：都是"离家门口太近"的地方 —— 一个在协议边界的序列化细节，
+> 一个在自己人（宿主）的调用路径。假实现永远测不出来，因为假实现不会挑剔。
+
 ### 3.1 由此得出的产品结论
 
 1. **默认走流式。** 非流式只用于短、非推理的调用（如翻译）。

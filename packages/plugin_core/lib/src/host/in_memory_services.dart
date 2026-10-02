@@ -54,7 +54,7 @@ class ContextInjection {
 /// **不做 `context.replace`** 是刻意的：让插件替换整个 system prompt 会让它
 /// 能冒充宿主设定的人设，也会让多个插件互相覆盖到不可预期。
 /// 只给「追加 + 排序 + 撤销」，能力足够且可控（见 `docs/05-primitives.md` §3.20）。
-class InMemoryContextSink implements ContextSink {
+class InMemoryContextSink implements ContextSink, ContextAssembler {
   InMemoryContextSink({
     this.maxBytesPerPlugin = 8 * 1024,
     this.maxBytesTotal = 32 * 1024,
@@ -144,6 +144,7 @@ class InMemoryContextSink implements ContextSink {
   ///
   /// 排序：`prepend` 在前、`append` 在后；组内按 priority 升序（越小越靠前），
   /// 同 priority 按插件 id 保证确定性。
+  @override
   String buildInjection() {
     _evictExpired();
     final all = _byPlugin.values.expand((l) => l).toList();

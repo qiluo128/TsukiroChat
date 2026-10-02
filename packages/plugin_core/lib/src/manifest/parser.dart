@@ -14,6 +14,7 @@ import 'dart:convert';
 import '../common/semver.dart';
 import '../permission/permission.dart';
 import 'manifest.dart';
+import 'theme.dart';
 
 /// 一条校验问题。
 class ManifestIssue {
@@ -203,6 +204,30 @@ ManifestParseResult parseManifest(Map<String, dynamic> json) {
     }
   }
 
+  // ── runtime 缺省的合法性 ──
+  //
+  // 省略 runtime 只在"零代码插件"时合法。声明了需要代码的能力却没有入口，
+  // 那不是"配置"，是"漏了东西" —— 必须在安装时拦下，而不是等运行期发现
+  // 按钮点了没反应。
+  if (runtime == null) {
+    final codeProvides = <String>[
+      if (provides.tools.isNotEmpty) 'tools',
+      if (provides.ui.isNotEmpty) 'ui',
+      if (provides.pages.isNotEmpty) 'pages',
+      if (provides.layout != null) 'layout',
+      if (provides.replaces != null) 'replaces',
+      if (harness != null) 'harness',
+    ];
+    if (codeProvides.isNotEmpty) {
+      errors.add(ManifestIssue(
+        'runtime',
+        '声明了 ${codeProvides.join(" / ")} 却没有 runtime。'
+        '这些能力需要代码实现（比如控件的 onClick 要有人接）。'
+        '只有纯声明式插件（美化包 / 人设包 / Skills）才可以省略 runtime。',
+      ));
+    }
+  }
+
   if (errors.isNotEmpty || id == null || name == null || version == null || semver == null) {
     return ManifestParseResult(issues: errors);
   }
@@ -276,13 +301,13 @@ String? _requireString(Map<String, dynamic> json, String key, List<ManifestIssue
   return value.trim();
 }
 
-RuntimeSpec _parseRuntime(Object? raw, List<ManifestIssue> errors) {
-  if (raw == null) {
-    errors.add(const ManifestIssue('runtime', '缺少必填字段（至少提供 {"main": "index.js"}）'));
-    return RuntimeSpec.defaults;
-  }
+RuntimeSpec? _parseRuntime(Object? raw, List<ManifestIssue> errors) {
+  // 允许缺失 —— 纯声明式插件（美化包 / 人设包）没有代码。
+  // 是否合法由 parseManifest 在拿到 provides 之后统一判断（见下）。
+  if (raw == null) return null;
+
   if (raw is! Map<String, dynamic>) {
-    errors.add(const ManifestIssue('runtime', '必须是对象'));
+    errors.add(const ManifestIssue('runtime', '必须是对象（或整体省略，表示纯声明式插件）'));
     return RuntimeSpec.defaults;
   }
 
@@ -465,15 +490,20 @@ ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
   final tools = _parseTools(raw['tools'], errors);
   final ui = _parseUi(raw['ui'], errors);
   final pages = _parsePages(raw['pages'], errors);
+  final themes = _parseThemes(raw['theme'] ?? raw['themes'], errors);
   final reserved = <String, dynamic>{};
 
+  // 预留段：**只解析不执行**。字段一次留全，这样插件今天写的 manifest
+  // 在未来宿主升级后不用改一个字（NFR-COMP-01）。
   for (final key in const <String>[
     'overlays',
     'skills',
-    'themes',
     'personas',
     'mcp',
     'memory',
+    'layout', // L2 布局级
+    'replaces', // L3 接管级
+    'data', // L3 数据访问
   ]) {
     final value = raw[key];
     if (value == null) continue;
@@ -484,12 +514,107 @@ ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
     reserved[key] = value;
   }
 
+  // 布局/接管段虽然不执行，但结构要基本合理 —— 否则插件作者会以为写对了
+  _checkReservedShape(reserved, errors);
+
   return ProvidesSpec(
     tools: tools,
     ui: ui,
     pages: pages,
+    themes: themes,
     rawReserved: reserved,
   );
+}
+
+/// 校验预留段的形状。
+///
+/// 不执行不等于不检查：如果插件写了个 `layout.mode` 拼错的键，宿主静默接受，
+/// 插件作者会以为布局生效了，等未来 L2 放开才发现写错。现在报出来成本最低。
+void _checkReservedShape(Map<String, dynamic> reserved, List<ManifestIssue> errors) {
+  final layout = reserved['layout'];
+  if (layout != null) {
+    if (layout is! Map) {
+      errors.add(const ManifestIssue('provides.layout', '必须是对象'));
+    } else {
+      const allowed = <String>{
+        'mode', 'slots', 'stack', 'grid', 'absolute', 'scroll', 'tabs',
+      };
+      for (final key in layout.keys) {
+        if (!allowed.contains('$key')) {
+          errors.add(ManifestIssue(
+            'provides.layout.$key',
+            '未知的布局字段。当前预留字段：${allowed.join(" / ")}',
+          ));
+        }
+      }
+      final slots = layout['slots'];
+      if (slots != null && slots is! Map) {
+        errors.add(const ManifestIssue('provides.layout.slots', '必须是对象'));
+      }
+    }
+  }
+
+  final replaces = reserved['replaces'];
+  if (replaces != null && replaces is! Map) {
+    errors.add(const ManifestIssue('provides.replaces', '必须是对象'));
+  }
+}
+
+List<ThemeDeclaration> _parseThemes(Object? raw, List<ManifestIssue> errors) {
+  if (raw == null) return const <ThemeDeclaration>[];
+
+  // 接受单个对象或数组 —— 两种写法都常见，没必要强迫作者二选一
+  final items = raw is List ? raw : <Object?>[raw];
+  final result = <ThemeDeclaration>[];
+  final seenIds = <String>{};
+  const validator = TokenValidator();
+
+  for (var i = 0; i < items.length; i++) {
+    final item = items[i];
+    final path = items.length == 1 ? 'provides.theme' : 'provides.theme[$i]';
+    if (item is! Map<String, dynamic>) {
+      errors.add(ManifestIssue(path, '必须是对象'));
+      continue;
+    }
+
+    final id = item['id']?.toString();
+    final name = item['name']?.toString();
+    if (id == null || id.isEmpty) {
+      errors.add(ManifestIssue('$path.id', '缺少主题 id'));
+      continue;
+    }
+    if (!seenIds.add(id)) {
+      errors.add(ManifestIssue('$path.id', '主题 id 重复："$id"'));
+      continue;
+    }
+    if (name == null || name.isEmpty) {
+      errors.add(ManifestIssue('$path.name', '缺少主题名（给用户看的）'));
+      continue;
+    }
+
+    final rawTokens = item['tokens'];
+    if (rawTokens is! Map) {
+      errors.add(ManifestIssue('$path.tokens', '必须是对象，键为令牌名'));
+      continue;
+    }
+
+    // 令牌校验：未知令牌名、类型不符、藏 CSS 全部在这里拦下
+    final tokenIssues = validator.validate(rawTokens.cast<String, dynamic>());
+    for (final issue in tokenIssues) {
+      errors.add(ManifestIssue('$path.tokens.${issue.token}', issue.message));
+    }
+    if (tokenIssues.isNotEmpty) continue;
+
+    result.add(ThemeDeclaration(
+      id: id,
+      name: name,
+      tokens: rawTokens.map((k, v) => MapEntry('$k', v as Object)),
+      base: item['base']?.toString(),
+      isDark: item['isDark'] == true,
+    ));
+  }
+
+  return result;
 }
 
 List<ToolDeclaration> _parseTools(Object? raw, List<ManifestIssue> errors) {

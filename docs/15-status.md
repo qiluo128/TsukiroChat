@@ -8,18 +8,22 @@
 
 | 工作项 | 状态 | 证据 |
 |---|---|---|
-| 需求整理成文档体系 | ✅ 完成 | `docs/` 下 16 篇（含索引） |
+| 需求整理成文档体系 | ✅ 完成 | `docs/` 下 18 篇（含索引） |
 | 开发环境准备（Dart SDK） | ✅ 完成 | `C:\dev\dart-sdk`，Dart 3.12.2 |
-| 插件内核骨架（纯 Dart） | ✅ 已跑通 | `packages/plugin_core`，**349 个单测全绿，1 个刻意跳过** |
-| 静态分析 | ✅ 零问题 | `dart analyze` → `No issues found!` |
-| **Demo 可行性验证（无头）** | ✅ **四条流程全通** | `test/demo_e2e_test.dart`，含安全约束与可扩展性 |
+| 插件内核骨架（纯 Dart） | ✅ 已跑通 | `packages/plugin_core`，**373 个单测全绿，1 个刻意跳过** |
+| 静态分析 | ✅ 零问题 | `dart analyze` → `No issues found!`（两个包都是） |
+| **Demo 可行性验证（无头）** | ✅ **四条流程全通** | `test/demo_e2e_test.dart` |
+| **真模型端到端** | ✅ **4 项全通** | `model_gateway/test/real_model_e2e_test.dart`，接真实中转站 |
+| 多协议模型接入 | ✅ OpenAI / Anthropic / Google + 模型表 | `packages/model_gateway` |
 | **原语 / 钩子可扩展性** | ✅ 已落地 | 24 域 112 条原语全量注册；钩子总线含错误隔离与超时 |
-| 三个测试插件源码 | ✅ 完成 | `plugins/{time-plugin,translate-button,mini-game}` |
-| 插件打包流水线 | ✅ 已跑通 | `scripts/pack_plugin.mjs` 产出 3 个 zip + 1 个恶意样本 |
-| Zip Slip / 符号链接防护 | ✅ 已实现并测试 | 真实 zip 构造 + 三个真实插件端到端 |
-| Flutter 宿主 App | ⬜ 未开始 | 见 [12-demo-plan](12-demo-plan.md) 阶段 A2 |
+| **L1 设计令牌（美化包）** | ✅ 已实现并校验 | 七组令牌白名单；未知令牌名报错并给候选；CSS 注入无从下手 |
+| **零代码插件** | ✅ 已支持 | 纯声明式插件可省略 `runtime`；`plugins/sakura-theme` 就是例子 |
+| 三个测试插件 + 一个美化包 | ✅ 完成 | `plugins/{time-plugin,translate-button,mini-game,sakura-theme}` |
+| 插件打包流水线 | ✅ 已跑通 | `scripts/pack_plugin.mjs`，含恶意样本构造 |
+| Zip Slip / 符号链接防护 | ✅ 已实现并测试 | 真实 zip 构造 + 真实插件端到端 |
+| Flutter 宿主 App | ⬜ 未开始 | 需要 6–8 GB 工具链下载，见 §4 |
 | WebView + Bridge 实际联通 | ⬜ 未开始 | 阶段 A3 |
-| Demo 端到端 21 项验收 | ⬜ 未开始 | 阶段 A4 |
+| Demo 端到端 21 项验收（真机） | ⬜ 未开始 | 阶段 A4 |
 
 ---
 
@@ -46,7 +50,7 @@ Analyzing plugin_core...
 No issues found!
 
 $ dart test
-00:00 +349 ~1: All tests passed!
+00:00 +373 ~1: All tests passed!
 ```
 
 （`~1` 是一个刻意跳过的用例：`ui.navigate` 仍是占位原语，跳过它正是"未实现 = UNSUPPORTED"的预期状态。）
@@ -74,7 +78,10 @@ $ dart test
 | **审计与脱敏** | `src/audit/audit.dart` | 审计写入接口 + 逐原语脱敏（手机号打码、对话原文不落库、密钥绝不记录） |
 | **参数校验** | `src/primitive/schema_validator.dart` | JSON Schema 子集；未知 `type` 值 fail-closed |
 | **消息模型** | `src/agent/chat_message.dart` | `ChatMessage` / `ToolCall`，含 OpenAI 格式互转 |
-| **无头验证台** | `test/support/headless_host.dart` | 安装流程 + Agent 循环 + 工具分发，**不依赖 Flutter** |
+| **Agent 循环** | `src/host/agent_loop.dart` | 可替换步骤（L7 预留）、6 条终止条件、工具失败不中断对话、宿主模型调用也记审计 |
+| **设计令牌** | `src/manifest/theme.dart` | 七组令牌白名单 + 类型校验 + 拼错给候选 + CSS 注入无从下手 |
+| **无头验证台** | `test/support/headless_host.dart` | 安装流程 + **委托给库里的 AgentLoop**（不再自己写一遍循环） |
+| **真模型端到端** | `model_gateway/test/real_model_e2e_test.dart` | 用户提问 → AgentLoop → 真 LLM → tool_calls → 插件 → 原语 → 回填 → 总结 |
 
 ### 2.3 测试抓到的真实缺陷（值得记录）
 
@@ -91,6 +98,9 @@ $ dart test
 | 7 | **文档里的 manifest 布局例子自相矛盾** | 中（文档缺陷） | `docs/04-plugin-spec.md` 把 `src/manifest.json` 列为「两层，拒绝」，但它与 `time-plugin-1.0.0/manifest.json` 结构完全相同，规则上无法一个拒一个收。写测试时才暴露，已修正文档（真正的两层是 `a/b/manifest.json`） |
 | 8 | **宿主的 hostApi 版本与插件声明的主版本对不上** | **高（集成）** | 三个插件的 manifest 都写 `hostApi: "^1.0.0"`，而无头宿主报 `0.1.0` → `satisfiesHostApi` 判不兼容 → **三个插件一个都装不上**，下游 16 个用例连锁失败。教训：`minHostVersion` 是下限（0.1.0 被 1.0.0 满足），`hostApi` 是**范围匹配**（major 必须相同），两者语义不同，很容易配出自相矛盾的清单 |
 | 9 | 测试假实现用 `text.codeUnits` 存中文 | 中（测试缺陷） | 中文的 code unit（U+4F60 = 20320）塞进 `Uint8List` 被截成 8 位，读回乱码。**任何"字符串 → 字节"的转换都必须显式 UTF-8** |
+| 10 | **`tool_calls[].function.arguments` 传了对象而非 JSON 字符串** | **高（真协议）** | OpenAI 协议要求它是**序列化后的 JSON 文本**。离线假网关不校验，所以 373 个单测全绿也发现不了；接真 API 立刻 400：`expected a string, but got {} instead`。根源是流式——参数按字符分片推送，线上表示只能是字符串 |
+| 11 | **AgentLoop 自己的模型调用没写审计** | **高（漏审计/漏计费）** | 宿主的调用不经过 `PrimitiveRegistry`，容易被当成"内部操作"不记账。但它**真的在消耗用户点数**，漏了就无法与网关对账。按 `docs/06` §8.3，宿主调用记 `pluginId = '__host__'` |
+| 12 | 凭据扫描器在 TLS 失败时报"未发现凭据" | **高（假阴性）** | `raw.githubusercontent.com` 在本机 TLS 校验失败，每个请求静默返回 null，扫描器于是报"通过"。**fail-open 的检查比没有检查更危险**——它给的是错误的信心。已改为 fail-closed |
 
 **其中 1–3 都是 fail-open 方向的缺陷** —— 如果不写这几条测试，权限系统会静默失效而没人发现。这正好验证了 ADR-009「先做纯 Dart 内核 + 单测」的判断：这些问题在 Flutter + Android + WebView 混合环境里几乎不可能定位。
 
@@ -124,28 +134,23 @@ dev.tsukiro.time-1.0.0-MALICIOUS.zip  2.6 KB  ← 含 ../evil-traversal.txt，�
 
 | # | 任务 | 依赖 | 说明 |
 |---|---|---|---|
-| ~~1~~ | ~~`bridge` 编解码~~ | — | ✅ **已完成** |
-| ~~2~~ | ~~`packaging` 包检查~~ | — | ✅ **已完成** |
-| ~~3~~ | ~~`audit` + redactor~~ | — | ✅ **已完成** |
-| ~~4~~ | ~~原语注册表与钩子总线~~ | — | ✅ **已完成** |
-| ~~5~~ | ~~无头 demo 可行性验证~~ | — | ✅ **已完成**，四条流程全通 |
-| ~~6~~ | ~~`slot_registry` + 页面表~~ | — | ✅ **已完成**。未知插槽静默忽略、权限撤销即隐藏控件 |
-| ~~7~~ | ~~`installer` 状态机与磁盘原子性~~ | — | ✅ **已完成**。staging → commit，任一步失败即回滚、不留残留 |
-| ~~8~~ | ~~`bridge/session` 握手门禁~~ | — | ✅ **已完成**。实例绑定、握手门禁、原语路由 |
-| ~~9~~ | ~~`context`/`message`/`schedule` 参考实现~~ | — | ✅ **已完成**（`host/in_memory_services.dart`） |
-| ~~10~~ | ~~多协议模型接入层~~ | — | ✅ **已完成**（`packages/model_gateway`）。OpenAI / Anthropic / Google + 模型表 |
-| ~~11~~ | ~~真实 API 接入验证~~ | — | ✅ **已完成**，8 项全通（见 [17-model-access](17-model-access.md)） |
-| 12 | `provides.theme` 解析为强类型（L1 设计令牌） | — | 令牌白名单 + 未知令牌名拒绝 |
-| 13 | `layout` / `replaces` 写进 manifest schema（不执行） | — | NFR-COMP-01：字段一次留全 |
-| 14 | 把无头宿主的桩换成真实实现 | — | `PluginRuntimeStub` → WebView + JS |
-| 15 | Flutter 宿主项目初始化 | 需装 Flutter | `flutter create --platforms=android` |
-| 16 | 聊天页 + Drift + SSE 流式 | 15 | Demo 流程 1。**模型调用直接复用 `model_gateway`** |
-| 17 | Android SDK + 真机/模拟器 | 15 | 需 ≥ 15 GB 磁盘，建议真机 |
-| 18 | WebView 容器 + Bridge 落地 | 8, 16 | 阶段 A3 |
-| 19 | 端到端 21 项验收（真机） | 全部 | 阶段 A4 |
+| ~~1–11~~ | ~~内核 / 宿主层 / 模型接入~~ | — | ✅ **全部完成** |
+| ~~12~~ | ~~`provides.theme` 解析为强类型（L1 设计令牌）~~ | — | ✅ **已完成**。七组令牌白名单、未知令牌给候选、CSS 注入无从下手 |
+| ~~13~~ | ~~`layout` / `replaces` 写进 schema~~ | — | ✅ **已完成**。**只解析不执行**，但形状会校验（拼错的键现在报错，不用等 L2 放开才发现） |
+| ~~14~~ | ~~零代码插件支持~~ | — | ✅ **已完成**。纯声明式插件可省略 `runtime`；声明了 tools/ui/pages 却省略 runtime 会报错 |
+| ~~15~~ | ~~Agent 循环落成正式模块~~ | — | ✅ **已完成**（`src/host/agent_loop.dart`）。无头验证台已改为复用它 |
+| ~~16~~ | ~~真模型端到端验证~~ | — | ✅ **已完成**，4 项全通（`real_model_e2e_test.dart`） |
+| 17 | Flutter 宿主项目初始化 | **需你确认磁盘** | `flutter create --platforms=android`。需 C 盘可用 ≥ 15 GB |
+| 18 | 聊天页 + Drift + SSE 流式 | 17 | Demo 流程 1。**模型调用直接复用 `model_gateway`** |
+| 19 | Android SDK + 真机/模拟器 | 17 | 建议真机（WebView 行为、权限模型只有真机才真实） |
+| 20 | 把 `PluginRuntimeStub` 换成真 WebView + JS | 18 | 阶段 A3。**这是唯一还没被真实验证的一环** |
+| 21 | 端到端 21 项验收（真机） | 全部 | 阶段 A4 |
 
-**建议**：12–14 仍是纯 Dart、可单测。做完再决定 Flutter + Android SDK 那次 6–8 GB 下载 ——
-那样即使环境准备受阻，插件内核、宿主层、模型接入三块都已经是完整可信的。
+**剩下的全部需要 Flutter / Android 工具链** —— 纯 Dart 能做的已经做完了。
+
+有一点值得强调：`docs/09-agent-and-tools.md` 设计的循环、`docs/16` 设计的三个变化轴、
+`docs/06` 设计的权限守门，现在都有**真模型验证过**的实现，而不是纸上设计。
+接下来换 Flutter 宿主只是"换个 UI 层 + 换个插件运行时"，内核与模型层不用动。
 > **无头验证台的边界**：`test/support/headless_host.dart` 能证明**架构成立**，
 > 不能证明「WebView 能跑 JS」。后者只有真机验证，是阶段 A3 的事。
 > 详见该文件顶部的说明。

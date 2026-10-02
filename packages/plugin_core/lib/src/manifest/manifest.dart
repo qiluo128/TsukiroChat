@@ -9,6 +9,7 @@ library;
 
 import '../common/semver.dart';
 import '../permission/permission.dart';
+import 'theme.dart';
 
 /// 作者信息。
 class ManifestAuthor {
@@ -233,6 +234,7 @@ class ProvidesSpec {
     this.tools = const <ToolDeclaration>[],
     this.ui = const <UiDeclaration>[],
     this.pages = const <PageDeclaration>[],
+    this.themes = const <ThemeDeclaration>[],
     this.rawReserved = const <String, dynamic>{},
   });
 
@@ -240,9 +242,27 @@ class ProvidesSpec {
   final List<UiDeclaration> ui;
   final List<PageDeclaration> pages;
 
-  /// 尚未建模但需原样保留的段：`overlays` / `skills` / `themes` /
-  /// `personas` / `mcp` / `memory`。
+  /// L1 美化包。**已校验为强类型** —— 令牌名一定在目录里，取值一定合法。
+  final List<ThemeDeclaration> themes;
+
+  /// 尚未建模但需原样保留的段：`overlays` / `skills` / `personas` /
+  /// `mcp` / `memory` / `layout` / `replaces`。
   final Map<String, dynamic> rawReserved;
+
+  /// `layout`（L2，预留）：宿主**只解析不执行**。
+  Map<String, dynamic>? get layout => rawReserved['layout'] as Map<String, dynamic>?;
+
+  /// `replaces`（L3，预留）：宿主**只解析不执行**。
+  Map<String, dynamic>? get replaces => rawReserved['replaces'] as Map<String, dynamic>?;
+
+  /// `data`（L3，预留）：插件想读哪些宿主数据。
+  Map<String, dynamic>? get dataAccess => rawReserved['data'] as Map<String, dynamic>?;
+
+  /// 是否声明了布局级扩展（宿主暂不执行，但可用于给用户提示）。
+  bool get declaresLayout => layout != null;
+
+  /// 是否声明了接管级扩展。
+  bool get declaresReplacements => replaces != null;
 }
 
 /// 一个插件的完整 manifest。
@@ -279,7 +299,12 @@ class PluginManifest {
   final String name;
   final String version;
   final SemVer semver;
-  final RuntimeSpec runtime;
+
+  /// 运行时入口。
+  ///
+  /// **可以为 null** —— 纯声明式插件（美化包 / 人设包 / Skills）没有代码。
+  /// 见 [isZeroCode]。
+  final RuntimeSpec? runtime;
   final String? description;
   final ManifestAuthor? author;
   final String? license;
@@ -315,6 +340,37 @@ class PluginManifest {
   List<ToolDeclaration> get tools => provides.tools;
   List<UiDeclaration> get ui => provides.ui;
   List<PageDeclaration> get pages => provides.pages;
+  List<ThemeDeclaration> get themes => provides.themes;
+
+  /// 这个插件是不是"纯美化包"（只声明主题，没有任何代码提供）。
+  ///
+  /// 用于给用户一个更简洁的安装确认 —— 纯美化包不申请权限、不跑代码，
+  /// 弹一屏权限说明反而让人不安。
+  bool get isThemeOnly =>
+      themes.isNotEmpty &&
+      tools.isEmpty &&
+      ui.isEmpty &&
+      pages.isEmpty &&
+      permissions.isEmpty;
+
+  /// **零代码插件**：没有运行时入口。
+  ///
+  /// 这是 L1「配置级」的落地方式 —— 圈内的美化包 / 人设包作者不需要写一行
+  /// JavaScript，只要一份 manifest 加几个图片文件。
+  ///
+  /// 反过来说：声明了 [tools] / [ui] / [pages] 就必须有 runtime，
+  /// 因为那些能力要靠代码实现（`onClick` 要有人接）。解析器会强制这一点。
+  bool get isZeroCode => runtime == null;
+
+  /// 该插件声明的、**需要代码**的能力。
+  List<String> get codeRequiredProvides => <String>[
+        if (tools.isNotEmpty) 'tools',
+        if (ui.isNotEmpty) 'ui',
+        if (pages.isNotEmpty) 'pages',
+        if (provides.layout != null) 'layout',
+        if (provides.replaces != null) 'replaces',
+        if (harness != null) 'harness',
+      ];
 
   @override
   String toString() => 'PluginManifest($id@$version, ${tools.length} tools)';

@@ -171,9 +171,25 @@ function validate(entries) {
       for (const f of ['manifestVersion', 'id', 'name', 'version']) {
         if (m[f] === undefined) errors.push(`manifest.json 缺少必填字段: ${f}`);
       }
-      const main = m.runtime?.main ?? 'index.js';
-      if (!entries.some((e) => e.entryPath === main)) {
+      // 入口文件必须真的在包里。零代码插件（纯美化包/人设包）没有 runtime，跳过。
+      const main = m.runtime?.main;
+      if (main && !entries.some((e) => e.entryPath === main)) {
         errors.push(`manifest.json 声明的入口不存在: ${main}`);
+      }
+      // 反过来：声明了需要代码的能力就必须有 runtime（与宿主解析器同一规则）
+      if (!m.runtime) {
+        const codeProvides = [
+          m.provides?.tools?.length ? 'tools' : null,
+          m.provides?.ui?.length ? 'ui' : null,
+          m.provides?.pages?.length ? 'pages' : null,
+          m.provides?.layout ? 'layout' : null,
+          m.provides?.replaces ? 'replaces' : null,
+        ].filter(Boolean);
+        if (codeProvides.length) {
+          errors.push(
+            `声明了 ${codeProvides.join(' / ')} 却没有 runtime —— 这些能力需要代码实现`,
+          );
+        }
       }
       for (const t of m.provides?.tools ?? []) {
         if (!t.handler) { errors.push(`工具 ${t.name} 缺少 handler`); continue; }

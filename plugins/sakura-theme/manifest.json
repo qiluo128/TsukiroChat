@@ -1,0 +1,48 @@
+{
+  "manifestVersion": 1,
+  "id": "dev.tsukiro.sakura-theme",
+  "name": "樱花配色",
+  "version": "1.0.0",
+  "description": "粉粉的樱花配色美化包。零代码：只有一份 manifest 和几个配色值。",
+  "author": { "name": "Tsukiro" },
+  "license": "MIT",
+  "icon": "assets/preview.svg",
+  "minHostVersion": "0.1.0",
+  "hostApi": "^1.0.0",
+
+  "permissions": [],
+
+  "provides": {
+    "theme": {
+      "id": "sakura",
+      "name": "樱花",
+      "tokens": {
+        "color.primary": "#FF6B9D",
+        "color.background": "#FFF7FA",
+        "color.surface": "#FFFFFF",
+        "color.text": "#3D2B33",
+        "color.textMuted": "#9B8890",
+        "color.userBubble": "#FFE3EE",
+        "color.assistantBubble": "#F6F1F3",
+        "color.divider": "#F0E4E9",
+
+        "font.size.body": 16,
+        "font.lineHeight": 1.6,
+        "font.weight.bold": 700,
+
+        "radius.bubble": 18,
+        "radius.card": 14,
+        "radius.button": 22,
+
+        "spacing.page": 16,
+        "spacing.messageGap": 10,
+
+        "shadow.card": "soft",
+
+        "animation.duration.fast": 120,
+        "animation.duration.normal": 240,
+        "animation.easing.standard": "decelerate"
+      }
+    }
+  }
+}

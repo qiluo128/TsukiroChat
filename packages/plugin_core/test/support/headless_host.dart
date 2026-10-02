@@ -1,4 +1,4 @@
-/// 无头宿主 —— 在没有 Flutter / Android / WebView 的情况下跑通**完整链路**。
+﻿/// 无头宿主 —— 在没有 Flutter / Android / WebView 的情况下跑通**完整链路**。
 ///
 /// 这是 Demo 的可行性验证台。它替代的东西只有两处：
 ///
@@ -14,7 +14,6 @@
 /// 所以这个验证台能证明「架构成立」，不能证明「JS 引擎能跑」。
 library;
 
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:plugin_core/plugin_core.dart';
@@ -131,52 +130,15 @@ class InstallOutcome {
       ok ? 'InstallOutcome(ok: ${manifest?.id})' : 'InstallOutcome(REJECTED by $rejectedBy: ${issues.join("; ")})';
 }
 
-// ─────────────────────────── 一轮对话 ───────────────────────────
+// ─────────────────────────── 结果类型（复用库里的定义） ───────────────────────────
 
-/// 一次工具调用的记录（用于断言"模型确实调了工具"）。
-class ToolInvocationRecord {
-  const ToolInvocationRecord({
-    required this.toolName,
-    required this.pluginId,
-    required this.ok,
-    this.result,
-    this.errorCode,
-    this.errorMessage,
-  });
+// 刻意**不**在这里另写一套循环结果类型：
+// Agent 循环已经落在 plugin_core/lib/src/host/agent_loop.dart，
+// 无头验证台、Flutter 宿主、真模型集成测试用的必须是同一份实现。
+// 各写一遍的后果是"测过的逻辑和线上跑的不是同一个"。
+typedef TurnResult = AgentTurnResult;
 
-  final String toolName;
-  final String pluginId;
-  final bool ok;
-  final Object? result;
-  final String? errorCode;
-  final String? errorMessage;
 
-  @override
-  String toString() => 'ToolInvocation($toolName @ $pluginId, ${ok ? "ok" : errorCode})';
-}
-
-/// 一轮对话的结果。
-class TurnResult {
-  const TurnResult({
-    required this.finalText,
-    required this.steps,
-    required this.toolInvocations,
-    required this.hookFailures,
-    this.hitStepLimit = false,
-  });
-
-  final String finalText;
-  final int steps;
-  final List<ToolInvocationRecord> toolInvocations;
-  final List<HookOutcome> hookFailures;
-  final bool hitStepLimit;
-
-  bool get usedTools => toolInvocations.isNotEmpty;
-
-  @override
-  String toString() =>
-      'TurnResult("$finalText", $steps steps, ${toolInvocations.length} tool calls)';
-}
 
 // ─────────────────────────── 宿主 ───────────────────────────
 
@@ -386,220 +348,66 @@ class HeadlessHost {
 
   // ── 一轮对话 ──
 
-  /// 跑一轮：上下文组装（含钩子）→ 模型 → 工具循环 → 收尾。
+  /// 宿主注入的上下文组装源（插件通过 `context.inject` 写进去的东西）。
+  ///
+  /// 可空：不需要验证上下文注入时留空即可。
+  ContextAssembler? contextAssembler;
+
+  /// 跑一轮对话。
+  ///
+  /// **委托给库里的 [AgentLoop]** —— 无头验证台不自己实现一遍循环。
+  /// 否则会出现"测试跑的是 A 实现、Flutter 宿主跑的是 B 实现"，
+  /// 测过了也不代表线上对。
   Future<TurnResult> runTurn({
     required String sessionId,
     required String userText,
     List<ChatMessage> history = const <ChatMessage>[],
-  }) async {
-    final context = HookContext(
-      phase: HookPhase.contextBuild,
-      sessionId: sessionId,
-      systemPrompt: persona,
-      messages: <ChatMessage>[...history, ChatMessage.user(userText)],
-    );
-
-    final hookFailures = <HookOutcome>[];
-
-    // 钩子：上下文组装（插件通过它注入自己的提示词）
-    final buildResult = await hooks.emit(HookPhase.contextBuild, context);
-    hookFailures.addAll(buildResult.failures);
-
-    final messages = context.mutableMessages;
-    final toolInvocations = <ToolInvocationRecord>[];
-    var step = 0;
-
-    while (step < maxSteps) {
-      step++;
-
-      // 钩子：调模型前
-      final beforeCtx = HookContext(
-        phase: HookPhase.beforeModel,
-        sessionId: sessionId,
-        systemPrompt: context.systemPrompt,
-        messages: messages,
-      );
-      final beforeResult = await hooks.emit(HookPhase.beforeModel, beforeCtx);
-      hookFailures.addAll(beforeResult.failures);
-
-      final wire = <ChatMessage>[
-        ChatMessage.system(beforeCtx.systemPrompt),
-        ...beforeCtx.mutableMessages,
-      ];
-
-      final visibleTools = tools.toOpenAiTools(
-        gatekeeper: gatekeeper,
-        skillAllowList: null,
-        userToggles: null,
-      );
-
-      final reply = await gateway.complete(ModelRequest(
-        messages: wire,
-        tools: visibleTools,
-      ));
-
-      if (!reply.hasToolCalls) {
-        // 钩子：模型返回后
-        final afterCtx = HookContext(
-          phase: HookPhase.afterModel,
-          sessionId: sessionId,
-          systemPrompt: context.systemPrompt,
-          messages: messages,
-          vars: <String, dynamic>{'reply': reply.text},
-        );
-        final afterResult = await hooks.emit(HookPhase.afterModel, afterCtx);
-        hookFailures.addAll(afterResult.failures);
-
-        return TurnResult(
-          finalText: reply.text,
-          steps: step,
-          toolInvocations: toolInvocations,
-          hookFailures: hookFailures,
-        );
-      }
-
-      // 把带工具调用的助手消息记进历史
-      messages.add(ChatMessage(
-        role: ChatRole.assistant,
-        content: reply.text.isEmpty ? null : reply.text,
-        toolCalls: reply.toolCalls,
-      ));
-
-      // 逐个执行工具
-      for (final call in reply.toolCalls) {
-        final record = await _dispatchTool(sessionId, call);
-        toolInvocations.add(record);
-        messages.add(ChatMessage.toolResult(
-          toolCallId: call.id,
-          content: jsonEncode(record.ok
-              ? <String, dynamic>{'ok': true, 'result': record.result}
-              : <String, dynamic>{
-                  'ok': false,
-                  'error': <String, dynamic>{
-                    'code': record.errorCode,
-                    'message': record.errorMessage,
-                  },
-                }),
-        ));
-      }
-    }
-
-    return TurnResult(
-      finalText: '（工具调用已达上限 $maxSteps 轮，已停止）',
-      steps: step,
-      toolInvocations: toolInvocations,
-      hookFailures: hookFailures,
-      hitStepLimit: true,
-    );
-  }
-
-  /// 分发一次工具调用。
-  ///
-  /// **工具失败不中断对话** —— 错误原样交给模型，让它自己组织语言告诉用户。
-  /// 这比宿主直接弹错误框体验好得多，也让模型有机会降级。
-  Future<ToolInvocationRecord> _dispatchTool(String sessionId, ToolCall call) async {
-    final tool = tools.lookup(call.name);
-    if (tool == null) {
-      return ToolInvocationRecord(
-        toolName: call.name,
-        pluginId: '',
-        ok: false,
-        errorCode: 'UNKNOWN_TOOL',
-        errorMessage: '宿主没有注册名为 "${call.name}" 的工具',
-      );
-    }
-
-    // 钩子：工具执行前
-    final beforeCtx = HookContext(
-      phase: HookPhase.beforeToolCall,
-      sessionId: sessionId,
-      systemPrompt: '',
-      messages: const <ChatMessage>[],
-      vars: <String, dynamic>{'tool': call.name, 'args': call.arguments},
-    );
-    await hooks.emit(HookPhase.beforeToolCall, beforeCtx);
-
-    // 权限：工具级权限也要过守门人
-    for (final permission in tool.permissions) {
-      final gate = gatekeeper.check(tool.pluginId, permission);
-      if (!gate.isAllowed) {
-        return ToolInvocationRecord(
-          toolName: call.name,
-          pluginId: tool.pluginId,
-          ok: false,
-          errorCode: errorCodeToString(gate.decision == GateDecision.confirmRequired
-              ? TsukiroErrorCode.confirmRequired
-              : TsukiroErrorCode.permissionDenied),
-          errorMessage: '插件未获得 $permission 权限',
-        );
-      }
-    }
-
-    final runtime = _runtimes[tool.pluginId];
-    if (runtime == null) {
-      return ToolInvocationRecord(
-        toolName: call.name,
-        pluginId: tool.pluginId,
-        ok: false,
-        errorCode: 'NO_RUNTIME',
-        errorMessage: '插件 ${tool.pluginId} 的运行时未加载',
-      );
-    }
-
-    final handler = runtime[tool.handler];
-    if (handler == null) {
-      return ToolInvocationRecord(
-        toolName: call.name,
-        pluginId: tool.pluginId,
-        ok: false,
-        errorCode: 'HANDLER_MISSING',
-        errorMessage: '插件包里没有 ${tool.handler}',
-      );
-    }
-
-    final api = PluginApi(
-      pluginId: tool.pluginId,
-      registry: registry,
+  }) {
+    final loop = AgentLoop(
+      gatekeeper: gatekeeper,
       tools: tools,
       hooks: hooks,
+      gateway: gateway,
+      invokeTool: _invokePluginTool,
+      persona: persona,
+      maxSteps: maxSteps,
+      audit: audit,
+      contextAssembler: contextAssembler,
     );
+    return loop.run(sessionId: sessionId, userText: userText, history: history);
+  }
+
+  /// 把工具调用转给插件运行时。
+  ///
+  /// 权限校验、钩子、审计**都不在这里做** —— [AgentLoop] 已经做过。
+  /// 这里只负责"找到插件、调用 handler"，职责单一所以也不会被绕过。
+  Future<ToolInvocationResult> _invokePluginTool(
+    String pluginId,
+    String handlerPath,
+    Map<String, dynamic> args,
+  ) async {
+    final runtime = _runtimes[pluginId];
+    if (runtime == null) {
+      return ToolInvocationResult.failure('NO_RUNTIME', '插件 $pluginId 的运行时未加载');
+    }
+
+    final handler = runtime[handlerPath];
+    if (handler == null) {
+      return ToolInvocationResult.failure('HANDLER_MISSING', '插件包里没有 $handlerPath');
+    }
 
     try {
-      final result = await handler(api, call.arguments);
-      final record = ToolInvocationRecord(
-        toolName: call.name,
-        pluginId: tool.pluginId,
-        ok: true,
-        result: result,
+      final api = PluginApi(
+        pluginId: pluginId,
+        registry: registry,
+        tools: tools,
+        hooks: hooks,
       );
-
-      // 钩子：工具执行后
-      final afterCtx = HookContext(
-        phase: HookPhase.afterToolCall,
-        sessionId: sessionId,
-        systemPrompt: '',
-        messages: const <ChatMessage>[],
-        vars: <String, dynamic>{'tool': call.name, 'result': result},
-      );
-      await hooks.emit(HookPhase.afterToolCall, afterCtx);
-
-      return record;
+      return ToolInvocationResult.ok(await handler(api, args));
     } on TsukiroException catch (e) {
-      return ToolInvocationRecord(
-        toolName: call.name,
-        pluginId: tool.pluginId,
-        ok: false,
-        errorCode: errorCodeToString(e.code),
-        errorMessage: e.message,
-      );
+      return ToolInvocationResult.failure(errorCodeToString(e.code), e.message);
     } catch (e) {
-      return ToolInvocationRecord(
-        toolName: call.name,
-        pluginId: tool.pluginId,
-        ok: false,
-        errorCode: 'PLUGIN_ERROR',
-        errorMessage: '$e',
-      );
+      return ToolInvocationResult.failure('PLUGIN_ERROR', '$e');
     }
   }
 }

@@ -41,7 +41,15 @@ class ToolCall {
         'type': 'function',
         'function': <String, dynamic>{
           'name': name,
-          'arguments': arguments,
+          // **必须是 JSON 字符串，不能是对象。**
+          //
+          // OpenAI 协议规定 `function.arguments` 是"被序列化后的 JSON 文本"。
+          // 传对象在离线假网关下看不出问题，接真实 API 会直接 400：
+          //   "expected a string, but got `{}` instead"
+          //
+          // 这个格式怪癖的根源是流式：参数是**按字符分片**推送的，
+          // 所以线上表示只能是字符串。收端拼完再 parse（见 fromOpenAi）。
+          'arguments': arguments.isEmpty ? '{}' : jsonEncode(arguments),
         },
       };
 

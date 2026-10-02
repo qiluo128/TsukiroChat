@@ -14,7 +14,7 @@
 |---|---|
 | 需求与架构文档 | ✅ 完成（`docs/` 16 篇，含索引） |
 | 开发环境准备 | ✅ Dart SDK 3.12.2 @ `C:\dev\dart-sdk` |
-| 插件内核（纯 Dart） | ✅ **349 个单测全绿，`dart analyze` 零问题** |
+| 插件内核（纯 Dart） | ✅ **373 个单测全绿，`dart analyze` 零问题** |
 | 三个测试插件源码 + 打包流水线 | ✅ 完成（含 Zip Slip 恶意样本） |
 | Flutter 宿主 App | ⬜ 未开始 |
 | Demo 端到端验收 | ⬜ 未开始 |
@@ -66,7 +66,7 @@ C:\dev\
 #   analyze / test 需要一次性 danger-full-access 提权（沙箱禁止命名管道，见 docs/13）
 & .\scripts\dart.ps1 pub get
 & .\scripts\dart.ps1 analyze        # → No issues found!
-& .\scripts\dart.ps1 test           # → All tests passed!  (349)
+& .\scripts\dart.ps1 test           # → All tests passed!  (373)
 
 # 打包三个测试插件
 foreach ($p in 'time-plugin','translate-button','mini-game') {
