@@ -23,11 +23,23 @@ class AppTokens {
     required this.spacing,
     required this.shadows,
     required this.animations,
+    this.brightness = Brightness.light,
     this.sourceThemeId,
   });
 
   /// 宿主默认令牌 —— 没有美化包时用它。
-  factory AppTokens.defaults() => AppTokens(
+  ///
+  /// [brightness] 为 [Brightness.dark] 时给一套暗色底。
+  ///
+  /// **为什么暗色不用"把浅色反转"来实现**：反转出来的对比度和色相都不对 ——
+  /// 深色背景上的纯白字会刺眼，主色也需要降低明度才不突兀。
+  /// 所以这里是一套**独立挑选**的值。
+  factory AppTokens.defaults({Brightness brightness = Brightness.light}) {
+    if (brightness == Brightness.dark) return AppTokens._dark();
+    return AppTokens._light();
+  }
+
+  factory AppTokens._light() => AppTokens(
         colors: const <String, Color>{
           'color.primary': Color(0xFF6366F1),
           'color.background': Color(0xFFF7F7FA),
@@ -61,6 +73,50 @@ class AppTokens {
           normal: Duration(milliseconds: 240),
           easing: 'standard',
         ),
+        brightness: Brightness.light,
+      );
+
+  factory AppTokens._dark() => AppTokens(
+        colors: const <String, Color>{
+          // 主色降低明度：深色背景上原来的 #6366F1 太跳
+          'color.primary': Color(0xFF818CF8),
+          // 不是纯黑 —— 纯黑配白字对比过强，长时间看很累
+          'color.background': Color(0xFF14161C),
+          'color.surface': Color(0xFF1D2027),
+          // 不是纯白 —— 深色底上的纯白会"发光"
+          'color.text': Color(0xFFE6E8EE),
+          'color.textMuted': Color(0xFF8B92A3),
+          'color.userBubble': Color(0xFF2E3350),
+          'color.assistantBubble': Color(0xFF1D2027),
+          'color.divider': Color(0xFF2A2E38),
+          // 深色底上饱和度要提一点才看得出是"红"
+          'color.danger': Color(0xFFF87171),
+          'color.success': Color(0xFF34D399),
+        },
+        font: const FontTokens(
+          family: null,
+          familyMono: null,
+          body: 16,
+          caption: 12.5,
+          title: 17,
+          // 深色底上字距和行高都要略放宽，否则显得挤
+          lineHeight: 1.6,
+          regular: 400,
+          bold: 600,
+        ),
+        radius: const RadiusTokens(bubble: 18, card: 14, button: 22, input: 22),
+        spacing: const SpacingTokens(page: 16, messageGap: 10, section: 20),
+        shadows: const <String, String>{
+          // 深色底上阴影几乎看不见，改用"发光"才有层次
+          'shadow.card': 'none',
+          'shadow.fab': 'glow',
+        },
+        animations: const AnimationTokens(
+          fast: Duration(milliseconds: 120),
+          normal: Duration(milliseconds: 240),
+          easing: 'standard',
+        ),
+        brightness: Brightness.dark,
       );
 
   /// 从美化包的 [ThemeDeclaration] 派生。
@@ -70,7 +126,6 @@ class AppTokens {
   factory AppTokens.fromTheme(ThemeDeclaration theme, {AppTokens? base}) {
     final defaults = base ?? AppTokens.defaults();
     final tokens = theme.tokens;
-
     Color? color(String key) {
       final raw = tokens[key];
       if (raw is! String) return null;
@@ -141,6 +196,8 @@ class AppTokens {
         normal: duration('animation.duration.normal', defaults.animations.normal),
         easing: tokens['animation.easing.standard']?.toString() ?? defaults.animations.easing,
       ),
+      // 明暗沿用 base：美化包改颜色，但不改用户选的明暗偏好
+      brightness: defaults.brightness,
       sourceThemeId: theme.id,
     );
   }
@@ -152,8 +209,14 @@ class AppTokens {
   final Map<String, String> shadows;
   final AnimationTokens animations;
 
+  /// 明暗模式。美化包**可以**覆盖颜色，但不改变明暗 ——
+  /// 那是用户的偏好，不该被插件决定。
+  final Brightness brightness;
+
   /// 来自哪个美化包；null = 宿主默认。
   final String? sourceThemeId;
+
+  bool get isDark => brightness == Brightness.dark;
 
   Color get primary => colors['color.primary']!;
   Color get background => colors['color.background']!;
@@ -240,6 +303,7 @@ class AppTokens {
         spacing: spacing,
         shadows: shadows,
         animations: animations,
+        brightness: brightness,
         sourceThemeId: sourceThemeId,
       );
 }

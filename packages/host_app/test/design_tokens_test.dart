@@ -129,6 +129,77 @@ void main() {
     });
   });
 
+  group('明暗模式', () {
+    test('两套底色不同，且各自内部一致', () {
+      final light = AppTokens.defaults();
+      final dark = AppTokens.defaults(brightness: Brightness.dark);
+
+      expect(light.brightness, Brightness.light);
+      expect(dark.brightness, Brightness.dark);
+      expect(dark.isDark, isTrue);
+      expect(light.isDark, isFalse);
+
+      // 底色和文字色都换了一套
+      expect(dark.background, isNot(light.background));
+      expect(dark.text, isNot(light.text));
+      expect(dark.surface, isNot(light.surface));
+    });
+
+    test('暗色的底比浅色的暗，文字比浅色的亮', () {
+      final light = AppTokens.defaults();
+      final dark = AppTokens.defaults(brightness: Brightness.dark);
+
+      // 用亮度近似比较，避免写死具体色值
+      expect(dark.background.computeLuminance(),
+          lessThan(light.background.computeLuminance()));
+      expect(dark.text.computeLuminance(),
+          greaterThan(light.text.computeLuminance()));
+    });
+
+    test('暗色的正文与底有足够对比度', () {
+      final dark = AppTokens.defaults(brightness: Brightness.dark);
+      final contrast = _contrastRatio(dark.text, dark.background);
+      // WCAG AA 对正文要求 4.5:1
+      expect(contrast, greaterThan(4.5),
+          reason: '暗色模式正文字对比度 ${contrast.toStringAsFixed(2)}:1 不够');
+    });
+
+    test('浅色的正文与底有足够对比度', () {
+      final light = AppTokens.defaults();
+      final contrast = _contrastRatio(light.text, light.background);
+      expect(contrast, greaterThan(4.5),
+          reason: '浅色模式正文字对比度 ${contrast.toStringAsFixed(2)}:1 不够');
+    });
+
+    test('暗色不用纯黑也不用纯白', () {
+      final dark = AppTokens.defaults(brightness: Brightness.dark);
+      // 纯黑配纯白对比过强，长时间看很累
+      expect(dark.background, isNot(const Color(0xFF000000)));
+      expect(dark.text, isNot(const Color(0xFFFFFFFF)));
+    });
+
+    test('美化包改颜色但不改明暗 —— 那是用户的偏好', () {
+      final base = AppTokens.defaults(brightness: Brightness.dark);
+      final themed = AppTokens.fromTheme(
+        theme(<String, dynamic>{'color.primary': '#FF6B9D'}),
+        base: base,
+      );
+
+      expect(themed.primary, const Color(0xFFFF6B9D));
+      expect(themed.brightness, Brightness.dark, reason: '插件的主题不该把用户选的深色改掉');
+      // 没声明的颜色沿用暗色底，而不是掉回浅色
+      expect(themed.background, base.background);
+    });
+
+    test('每种明暗都能生成合法的 ThemeData', () {
+      for (final b in Brightness.values) {
+        final data = AppTheme.build(AppTokens.defaults(brightness: b));
+        expect(data.colorScheme.brightness, b);
+        expect(data.extension<AppTokensExtension>(), isNotNull);
+      }
+    });
+  });
+
   group('hex 解析', () {
     test('合法格式', () {
       expect(parseHexColor('#FFF'), const Color(0xFFFFFFFF));
@@ -172,4 +243,16 @@ void main() {
       expect(seen.primary, AppTokens.defaults().primary);
     });
   });
+}
+
+/// WCAG 相对亮度对比度。
+///
+/// 用它而不是写死色值：改配色时测试仍然有效，
+/// 而且能直接告诉你"对比度不够"，比 assert 相等有用得多。
+double _contrastRatio(Color a, Color b) {
+  final la = a.computeLuminance();
+  final lb = b.computeLuminance();
+  final hi = la > lb ? la : lb;
+  final lo = la > lb ? lb : la;
+  return (hi + 0.05) / (lo + 0.05);
 }

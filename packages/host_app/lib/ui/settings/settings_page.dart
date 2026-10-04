@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/app_providers.dart';
+import '../../providers/theme_provider.dart';
 import '../../theme/app_theme.dart';
 import 'model_config_page.dart';
 
@@ -44,6 +45,27 @@ class SettingsPage extends ConsumerWidget {
 
           Divider(height: 24, color: t.divider, indent: t.spacing.page.toDouble()),
 
+          const _SectionTitle('外观'),
+          Consumer(
+            builder: (context, ref, _) {
+              final pref =
+                  ref.watch(themePreferenceProvider).valueOrNull ?? ThemePreference.system;
+              return ListTile(
+                leading: Icon(switch (pref) {
+                  ThemePreference.system => Icons.brightness_auto_outlined,
+                  ThemePreference.light => Icons.light_mode_outlined,
+                  ThemePreference.dark => Icons.dark_mode_outlined,
+                }),
+                title: const Text('主题'),
+                subtitle: Text(pref.label, style: const TextStyle(fontSize: 12.5)),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () => _pickTheme(context, ref, pref),
+              );
+            },
+          ),
+
+          Divider(height: 24, color: t.divider, indent: t.spacing.page.toDouble()),
+
           const _SectionTitle('关于'),
           const ListTile(
             leading: Icon(Icons.info_outline),
@@ -65,6 +87,38 @@ class SettingsPage extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+Future<void> _pickTheme(
+  BuildContext context,
+  WidgetRef ref,
+  ThemePreference current,
+) async {
+  final picked = await showModalBottomSheet<ThemePreference>(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: ThemePreference.values.map((p) {
+          return ListTile(
+            leading: Icon(switch (p) {
+              ThemePreference.system => Icons.brightness_auto_outlined,
+              ThemePreference.light => Icons.light_mode_outlined,
+              ThemePreference.dark => Icons.dark_mode_outlined,
+            }),
+            title: Text(p.label),
+            trailing: p == current
+                ? Icon(Icons.check, size: 18, color: context.tokens.primary)
+                : null,
+            onTap: () => Navigator.pop(ctx, p),
+          );
+        }).toList(growable: false),
+      ),
+    ),
+  );
+  if (picked != null) {
+    await ref.read(themePreferenceProvider.notifier).set(picked);
   }
 }
 

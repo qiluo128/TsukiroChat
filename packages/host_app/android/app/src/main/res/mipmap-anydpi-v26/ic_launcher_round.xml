@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自适应图标（Android 8+）。
+
+  系统会按厂商喜好把前景裁成圆形/方形/水滴形，所以前景层的内容
+  必须落在中间 72/108 的安全区里 —— 见 scripts/make_app_icon.py。
+
+  由脚本生成，改设计请改脚本再重跑，不要手改这里的图。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <!-- 主题图标（Android 13+）：跟随壁纸配色时用的单色版本 -->
+    <monochrome android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

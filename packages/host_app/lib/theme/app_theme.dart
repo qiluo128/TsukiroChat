@@ -40,7 +40,12 @@ extension AppTokensContext on BuildContext {
 
 /// 主题构建。
 abstract final class AppTheme {
-  static ThemeData build(AppTokens t, {Brightness brightness = Brightness.light}) {
+  /// 从令牌构建主题。
+  ///
+  /// 明暗**由令牌自己带**（`tokens.brightness`），不单独传参 ——
+  /// 两处各说各话时会出现"暗色令牌配浅色 ColorScheme"这种脏组合。
+  static ThemeData build(AppTokens t) {
+    final brightness = t.brightness;
     final colorScheme = ColorScheme.fromSeed(
       seedColor: t.primary,
       brightness: brightness,

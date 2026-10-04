@@ -5,17 +5,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers/app_providers.dart';
+import 'providers/theme_provider.dart';
 import 'theme/app_theme.dart';
 import 'theme/design_tokens.dart';
 import 'ui/agent_list_page.dart';
 import 'ui/settings/settings_page.dart';
 
-/// 当前生效的设计令牌。
+/// 指定明暗下的设计令牌。
 ///
-/// 现在是宿主默认值。接入美化包后这里改成「从已启用的主题插件取
-/// ThemeDeclaration → AppTokens.fromTheme(...)」，**其余代码一行不用改** ——
-/// 所有控件都是通过 context.tokens 取值的。
-final appTokensProvider = Provider<AppTokens>((ref) => AppTokens.defaults());
+/// 用 `family` 按明暗分别缓存 —— 切主题时不用重新解析。
+///
+/// 接入美化包之后，这里改成「从已启用的主题插件取 [ThemeDeclaration]
+/// → `AppTokens.fromTheme(theme, base: AppTokens.defaults(brightness: ...))`」，
+/// **其余代码一行不用改** —— 所有控件都是通过 `context.tokens` 取值的。
+final appTokensProvider = Provider.family<AppTokens, Brightness>(
+  (ref, brightness) => AppTokens.defaults(brightness: brightness),
+);
 
 abstract final class Routes {
   static const String settings = '/settings';
@@ -26,14 +31,19 @@ class TsukiroApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tokens = ref.watch(appTokensProvider);
+    final light = ref.watch(appTokensProvider(Brightness.light));
+    final dark = ref.watch(appTokensProvider(Brightness.dark));
+    final preference =
+        ref.watch(themePreferenceProvider).valueOrNull ?? ThemePreference.system;
 
     return MaterialApp(
       title: 'Tsukiro Chat',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.build(tokens),
-      // 中文界面用不上多语言包，但把 locale 定死能避免系统语言导致的
-      // Material 组件文案混语言
+      // 两套都给 Flutter，由 themeMode 决定用哪套 ——
+      // `system` 时 Flutter 自己监听平台切换，比我们自己读亮度再重建可靠
+      theme: AppTheme.build(light),
+      darkTheme: AppTheme.build(dark),
+      themeMode: preference.themeMode,
       locale: const Locale('zh', 'CN'),
       home: const _Bootstrap(),
       routes: <String, WidgetBuilder>{
