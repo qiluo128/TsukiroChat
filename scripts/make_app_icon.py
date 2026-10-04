@@ -33,10 +33,13 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.path.join(REPO, "packages", "host_app", "android", "app", "src", "main", "res")
 
 # 与 design_tokens 的主色同族
-GRAD_TOP = (99, 102, 241)     # #6366F1
-GRAD_BOTTOM = (139, 92, 246)  # #8B5CF6
+GRAD_TOP = (0, 222, 255)      # #00DEFF
+GRAD_BOTTOM = (0, 145, 255)   # #0091FF
 
 # 每个密度下的基准尺寸（dp）
+# 气泡上的点：主色是亮青，在白气泡上对比只有 1.5:1 —— 得用深色
+INK = (6, 34, 44)             # #06222C，与 onPrimary 一致
+
 DENSITIES = {
     "mipmap-mdpi": 1.0,
     "mipmap-hdpi": 1.5,
@@ -120,7 +123,7 @@ def draw_bubble(canvas_size, bubble_ratio):
     for i in (-1, 0, 1):
         x = cx + i * gap
         d.ellipse((x - dot_r, cy - dot_r, x + dot_r, cy + dot_r),
-                  fill=GRAD_TOP + (255,))
+                  fill=INK)
 
     return img
 

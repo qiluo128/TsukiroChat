@@ -41,14 +41,15 @@ class AppTokens {
 
   factory AppTokens._light() => AppTokens(
         colors: const <String, Color>{
-          'color.primary': Color(0xFF6366F1),
-          'color.background': Color(0xFFF7F7FA),
+          // 主题色：亮青
+          'color.primary': Color(0xFF00DEFF),
+          'color.background': Color(0xFFF5FBFC),
           'color.surface': Color(0xFFFFFFFF),
-          'color.text': Color(0xFF1F2430),
-          'color.textMuted': Color(0xFF8A8F9C),
-          'color.userBubble': Color(0xFFE4E7FF),
+          'color.text': Color(0xFF10202A),
+          'color.textMuted': Color(0xFF7A8A93),
+          'color.userBubble': Color(0xFFCFF6FF),
           'color.assistantBubble': Color(0xFFFFFFFF),
-          'color.divider': Color(0xFFE8E8EE),
+          'color.divider': Color(0xFFE2EEF1),
           'color.danger': Color(0xFFEF4444),
           'color.success': Color(0xFF10B981),
         },
@@ -78,18 +79,16 @@ class AppTokens {
 
   factory AppTokens._dark() => AppTokens(
         colors: const <String, Color>{
-          // 主色降低明度：深色背景上原来的 #6366F1 太跳
-          'color.primary': Color(0xFF818CF8),
-          // 不是纯黑 —— 纯黑配白字对比过强，长时间看很累
-          'color.background': Color(0xFF14161C),
-          'color.surface': Color(0xFF1D2027),
-          // 不是纯白 —— 深色底上的纯白会"发光"
-          'color.text': Color(0xFFE6E8EE),
-          'color.textMuted': Color(0xFF8B92A3),
-          'color.userBubble': Color(0xFF2E3350),
-          'color.assistantBubble': Color(0xFF1D2027),
-          'color.divider': Color(0xFF2A2E38),
-          // 深色底上饱和度要提一点才看得出是"红"
+          // 亮青在深色底上非常跳，直接用原色即可 ——
+          // 不需要像紫色那样降明度
+          'color.primary': Color(0xFF00DEFF),
+          'color.background': Color(0xFF0C1418),
+          'color.surface': Color(0xFF141F24),
+          'color.text': Color(0xFFE2EEF1),
+          'color.textMuted': Color(0xFF7E929B),
+          'color.userBubble': Color(0xFF0E3A47),
+          'color.assistantBubble': Color(0xFF141F24),
+          'color.divider': Color(0xFF1F2E34),
           'color.danger': Color(0xFFF87171),
           'color.success': Color(0xFF34D399),
         },
@@ -228,6 +227,19 @@ class AppTokens {
   Color get divider => colors['color.divider']!;
   Color get danger => colors['color.danger']!;
   Color get success => colors['color.success']!;
+
+  /// 主色上的前景色（按钮文字、头像字、FAB 图标）。
+  ///
+  /// **算出来而不是写死**。写死 `Colors.white` 的话，遇到亮主色
+  /// （比如 `#00DEFF`，相对亮度约 0.65）对比度只有约 1.5:1 —— 白字几乎看不见。
+  ///
+  /// 算出来还有两个好处：**美化包换任何主色都自动正确**；
+  /// 也不用在内核的 token 白名单里加一个 `color.onPrimary` 并指望插件作者填对。
+  Color get onPrimary =>
+      primary.computeLuminance() > 0.5 ? const Color(0xFF06222C) : Colors.white;
+
+  /// 主色上的次要前景（次要图标等），比 [onPrimary] 淡一点。
+  Color get onPrimaryMuted => onPrimary.withValues(alpha: 0.72);
 
   /// 阴影档位 → 具体 BoxShadow 列表。
   ///

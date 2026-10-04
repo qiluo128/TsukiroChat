@@ -61,4 +61,6 @@ flutter:
     - assets/demo_plugins/translate-button/
     - assets/demo_plugins/sakura-theme/assets/
     - assets/demo_plugins/sakura-theme/
+    - assets/demo_plugins/status-panel/handlers/
+    - assets/demo_plugins/status-panel/
     # <<< demo_plugins

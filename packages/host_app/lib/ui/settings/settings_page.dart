@@ -9,7 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/app_providers.dart';
+import '../../providers/plugin_providers.dart';
 import '../../providers/theme_provider.dart';
+import '../plugin_slot.dart';
+import 'plugin_page.dart';
 import '../../theme/app_theme.dart';
 import 'model_config_page.dart';
 
@@ -40,6 +43,36 @@ class SettingsPage extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right, size: 18),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const ModelConfigPage()),
+            ),
+          ),
+
+          Divider(height: 24, color: t.divider, indent: t.spacing.page.toDouble()),
+
+          // 插件插槽：设置页分区。插件可以往这里塞自己的设置界面。
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: t.spacing.page.toDouble()),
+            child: const PluginSlot(slot: 'settings.sections', axis: Axis.vertical),
+          ),
+
+          const _SectionTitle('插件'),
+          ListTile(
+            leading: const Icon(Icons.extension_outlined),
+            title: const Text('插件管理'),
+            subtitle: Consumer(
+              builder: (context, ref, _) {
+                final host = ref.watch(pluginHostValueProvider);
+                ref.watch(pluginHostRevisionProvider);
+                return Text(
+                  host == null
+                      ? '正在启动…'
+                      : '${host.plugins.length} 个已安装 · ${host.runningCount} 个运行中',
+                  style: const TextStyle(fontSize: 12.5),
+                );
+              },
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const PluginPage()),
             ),
           ),
 

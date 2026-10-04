@@ -364,7 +364,12 @@ class _Avatar extends StatelessWidget {
       alignment: Alignment.center,
       child: Text(
         initial,
-        style: const TextStyle(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w600),
+        // 不能是 const —— color 来自令牌，亮主色下要换成深色前景
+        style: TextStyle(
+          fontSize: 14,
+          color: t.onPrimary,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

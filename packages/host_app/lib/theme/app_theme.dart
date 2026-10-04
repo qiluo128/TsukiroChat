@@ -109,7 +109,7 @@ abstract final class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: t.primary,
-          foregroundColor: Colors.white,
+          foregroundColor: t.onPrimary,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(t.radius.button.toDouble()),
           ),

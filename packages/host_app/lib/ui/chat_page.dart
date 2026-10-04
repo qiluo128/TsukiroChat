@@ -9,6 +9,7 @@ import '../providers/app_providers.dart';
 import '../providers/chat_controller.dart';
 import '../theme/app_theme.dart';
 import 'message_bubble.dart';
+import 'plugin_slot.dart';
 import 'user_error.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
@@ -73,6 +74,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       body: Column(
         children: <Widget>[
           if (!ready) const _NoModelBanner(),
+
+          // 插件插槽：聊天工具栏。
+          // 上下文告诉插件"现在有没有消息、是不是正在流式输出"，
+          // 声明里的 `when` 就靠它求值 —— 比如翻译按钮在没有消息时不显示。
+          PluginSlot(
+            slot: 'chat.toolbar',
+            context: <String, dynamic>{
+              'hasMessages': (messagesAsync.valueOrNull ?? const []).isNotEmpty,
+              'isStreaming': sending,
+            },
+          ),
+
           Expanded(
             child: messagesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -261,12 +274,16 @@ class _ComposerState extends State<_Composer> {
             _RoundButton(
               icon: Icons.stop_rounded,
               background: t.danger,
+              // 红底上用白字是对的（红是暗色）
+              foreground: Colors.white,
               onTap: widget.onCancel,
             )
           else
             _RoundButton(
               icon: Icons.arrow_upward_rounded,
               background: canSend ? t.primary : t.divider,
+              // 亮主色上必须用深色前景；禁用态用中灰
+              foreground: canSend ? t.onPrimary : t.textMuted,
               onTap: canSend
                   ? () {
                       widget.onSend();
@@ -282,10 +299,18 @@ class _ComposerState extends State<_Composer> {
 }
 
 class _RoundButton extends StatelessWidget {
-  const _RoundButton({required this.icon, required this.background, this.onTap});
+  const _RoundButton({
+    required this.icon,
+    required this.background,
+    required this.foreground,
+    this.onTap,
+  });
 
   final IconData icon;
   final Color background;
+
+  /// 图标颜色。**不能写死白色** —— 亮主色上的白图标对比度只有约 1.5:1。
+  final Color foreground;
   final VoidCallback? onTap;
 
   @override
@@ -301,7 +326,7 @@ class _RoundButton extends StatelessWidget {
           child: SizedBox(
             width: 44,
             height: 44,
-            child: Icon(icon, color: Colors.white, size: 21),
+            child: Icon(icon, color: foreground, size: 21),
           ),
         ),
       ),

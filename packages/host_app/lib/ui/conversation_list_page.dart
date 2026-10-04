@@ -14,6 +14,7 @@ import '../providers/app_providers.dart';
 import '../theme/app_theme.dart';
 import 'agent_edit_page.dart';
 import 'chat_page.dart';
+import 'plugin_slot.dart';
 
 class ConversationListPage extends ConsumerStatefulWidget {
   const ConversationListPage({super.key, required this.agentId});
@@ -44,6 +45,16 @@ class _ConversationListPageState extends ConsumerState<ConversationListPage>
       appBar: AppBar(
         title: Text(agent?.name ?? '智能体'),
         actions: <Widget>[
+          // 插件插槽：智能体级操作。
+          // 插件可以往这里塞按钮（比如「查看 AI 心情」「导出对话」）。
+          PluginSlot(
+            slot: 'agent.actions',
+            context: <String, dynamic>{
+              'agentId': widget.agentId,
+              'hasPersona': agent?.hasPersona ?? false,
+              'conversationCount': agent?.conversationCount ?? 0,
+            },
+          ),
           IconButton(
             tooltip: '编辑智能体',
             icon: const Icon(Icons.tune),
@@ -68,7 +79,7 @@ class _ConversationListPageState extends ConsumerState<ConversationListPage>
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _newConversation(context),
         backgroundColor: t.primary,
-        foregroundColor: Colors.white,
+        foregroundColor: t.onPrimary,
         icon: const Icon(Icons.add_comment_outlined),
         label: const Text('新对话'),
       ),

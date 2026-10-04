@@ -59,12 +59,17 @@ class PluginHost extends ChangeNotifier {
     required this.gatekeeper,
     required this.primitiveRegistry,
     required this.audit,
-  });
+    SlotRegistry? slotRegistry,
+  }) : slotRegistry = slotRegistry ?? SlotRegistry();
 
   final ToolRegistry toolRegistry;
   final Gatekeeper gatekeeper;
   final PrimitiveRegistry primitiveRegistry;
   final AuditSink audit;
+
+  /// 插槽注册表。**和工具表一样，必须是调用方传进来的那一份** ——
+  /// 界面渲染时查的是它，如果这里 new 一个新的，界面上永远看不到插件 UI。
+  final SlotRegistry slotRegistry;
 
   final List<InstalledPlugin> _plugins = <InstalledPlugin>[];
   String? _rootDir;
@@ -147,6 +152,83 @@ class PluginHost extends ChangeNotifier {
       debugPrint('[plugin] ${plugin.id} 有工具名冲突：'
           '${conflicts.map((c) => c.requested).join(', ')}');
     }
+
+    // 插槽：未知插槽**不报错也不注册**（只记一条日志）。
+    // 这是刻意的 —— 未知插槽静默忽略，插件往新版宿主才有的插槽放东西时，
+    // 在旧宿主上只是不显示，而不是装都装不上。
+    final unknownSlots = slotRegistry.registerPlugin(plugin.manifest);
+    if (unknownSlots.isNotEmpty) {
+      debugPrint('[plugin] ${plugin.id} 用了未知插槽：${unknownSlots.join(', ')}'
+          '（已忽略，不影响其他功能）');
+    }
+  }
+
+  // ─────────────────────────── 插槽 ───────────────────────────
+
+  /// 某个插槽里当前应该显示什么。
+  ///
+  /// [context] 是渲染上下文（如 `{hasMessages: true, isStreaming: false}`），
+  /// 用来求值声明里的 `when`。
+  ///
+  /// 三层过滤，缺一不可：
+  ///   1. 插件必须是启用且已加载的 —— 停用的插件不该还占着界面
+  ///   2. 声明上要求的权限必须是插件已经拿到的
+  ///   3. `when` 条件必须成立
+  List<RegisteredUi> visibleUi(String slot, {Map<String, dynamic> context = const {}}) {
+    final enabledIds = _plugins.where((x) => x.enabled).map((x) => x.id).toSet();
+    final granted = <String, Set<String>>{
+      for (final p in _plugins) p.id: gatekeeper.grantedOf(p.id),
+    };
+
+    return slotRegistry.uiIn(slot).where((ui) {
+      if (!enabledIds.contains(ui.pluginId)) return false;
+
+      // 权限：声明里要求了但没拿到 → 不显示。
+      // 显示出来再让点击失败是更糟的体验（用户以为能用）。
+      final need = ui.declaration.permissions;
+      if (need.isNotEmpty) {
+        final have = granted[ui.pluginId] ?? const <String>{};
+        for (final p in need) {
+          if (!have.contains(p)) return false;
+        }
+      }
+
+      return _matchesWhen(ui.declaration.when, context);
+    }).toList(growable: false);
+  }
+
+  /// 求值 `when`：键值相等比较，没有表达式语言。
+  ///
+  /// 没有表达式语言是**刻意的** —— 有表达式就要有解析器和沙箱，
+  /// 而声明式 UI 的价值就在于宿主能完全掌控它渲染什么。
+  static bool _matchesWhen(Map<String, dynamic>? when, Map<String, dynamic> context) {
+    if (when == null || when.isEmpty) return true;
+    for (final entry in when.entries) {
+      if (context[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
+
+  /// 把界面事件发给插件。
+  ///
+  /// 走 `evt`（宿主→插件单向），对应插件侧的 `tsukiro.event.on(name, fn)`。
+  /// 返回 false 表示插件没在跑 —— 界面据此给用户一个明确反馈，
+  /// 而不是点下去毫无反应。
+  bool dispatchUiEvent(
+    String pluginId,
+    String event, {
+    Map<String, dynamic>? payload,
+  }) {
+    final plugin = _find(pluginId);
+    final runtime = plugin?.runtime;
+    if (runtime == null || !runtime.isReady) {
+      debugPrint('[plugin] $pluginId 未运行，事件 $event 丢弃');
+      return false;
+    }
+    return runtime.sendEvent(event, <String, dynamic>{
+      'pluginId': pluginId,
+      ...?payload,
+    });
   }
 
   // ─────────────────────────── 启停 ───────────────────────────
@@ -211,7 +293,10 @@ class PluginHost extends ChangeNotifier {
     } else {
       await plugin.runtime?.stop();
       plugin.runtime = null;
+      // 停用时把工具与插槽都摘掉 —— 否则模型还能看到它的工具、
+      // 界面还占着它的位置，点了却没人接
       toolRegistry.unregisterPlugin(pluginId);
+      slotRegistry.unregisterPlugin(pluginId);
     }
     notifyListeners();
   }
@@ -271,6 +356,7 @@ class PluginHost extends ChangeNotifier {
     await plugin.runtime?.stop();
     toolRegistry.unregisterPlugin(pluginId);
     gatekeeper.unregisterPlugin(pluginId);
+    slotRegistry.unregisterPlugin(pluginId);
 
     final dir = Directory(plugin.directory);
     if (dir.existsSync()) await dir.delete(recursive: true);

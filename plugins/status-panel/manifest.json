@@ -1,0 +1,124 @@
+{
+  "manifestVersion": 1,
+  "id": "dev.tsukiro.status",
+  "name": "状态面板",
+  "version": "1.0.0",
+  "description": "演示插件的 UI 渲染：往聊天的工具栏、智能体的操作区、设置页塞控件，点击后调原语弹提示。",
+  "author": {
+    "name": "Tsukiro",
+    "url": "https://github.com/tsukiro-chat"
+  },
+  "license": "MIT",
+  "keywords": ["demo", "ui", "status"],
+  "minHostVersion": "0.1.0",
+  "hostApi": "^1.0.0",
+
+  "runtime": {
+    "main": "index.js",
+    "type": "module",
+    "autoStart": true
+  },
+
+  "permissions": [
+    {
+      "name": "sys.time",
+      "reason": "点「现在几点」时读取系统时间"
+    },
+    {
+      "name": "ui",
+      "reason": "弹提示告诉用户结果"
+    }
+  ],
+
+  "provides": {
+    "tools": [
+      {
+        "name": "check_time",
+        "description": "获取当前时间。当用户询问现在几点、今天几号时调用。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "timezone": {
+              "type": "string",
+              "description": "IANA 时区名，如 Asia/Shanghai。留空表示使用设备本地时区。"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "handler": "handlers/check_time.js",
+        "permissions": ["sys.time"],
+        "timeoutMs": 5000,
+        "returns": "object"
+      }
+    ],
+
+    "ui": [
+      {
+        "slot": "chat.toolbar",
+        "id": "time-now",
+        "type": "button",
+        "label": "现在几点",
+        "icon": "lucide:clock",
+        "tooltip": "让插件读一次系统时间",
+        "order": 20,
+        "when": {
+          "hasMessages": true
+        },
+        "onClick": {
+          "event": "status.time_clicked"
+        },
+        "permissions": ["sys.time"]
+      },
+      {
+        "slot": "agent.actions",
+        "id": "greet",
+        "type": "button",
+        "label": "打招呼",
+        "icon": "lucide:smile",
+        "tooltip": "打个招呼",
+        "order": 10,
+        "onClick": {
+          "event": "status.greet"
+        },
+        "permissions": ["ui"]
+      },
+      {
+        "slot": "agent.sections",
+        "id": "panel",
+        "type": "section",
+        "label": "状态面板",
+        "icon": "lucide:activity",
+        "order": 50,
+        "children": [
+          {
+            "slot": "agent.sections",
+            "id": "hint",
+            "type": "text",
+            "label": "这是一个插件渲染的区块，控件都是原生 Flutter 控件。"
+          },
+          {
+            "slot": "agent.sections",
+            "id": "auto",
+            "type": "toggle",
+            "label": "自动报时",
+            "icon": "lucide:timer",
+            "permissions": ["ui"]
+          },
+          {
+            "slot": "agent.sections",
+            "id": "ping",
+            "type": "button",
+            "label": "报时",
+            "icon": "lucide:zap",
+            "order": 1,
+            "onClick": {
+              "event": "status.time_clicked"
+            },
+            "permissions": ["sys.time"]
+          }
+        ]
+      }
+    ]
+  }
+}

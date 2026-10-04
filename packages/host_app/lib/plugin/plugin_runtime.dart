@@ -45,6 +45,12 @@ abstract class PluginRuntime {
   bool get isReady;
   List<PluginLogEntry> get logs;
 
+  /// 失败原因。`state == failed` 时有值，其余情况为 null。
+  ///
+  /// 界面上要显示它 —— 插件起不来时"启动失败"四个字没有用，
+  /// 用户和开发者都需要知道**为什么**。
+  String? get failureReason;
+
   Future<void> start();
   Future<void> stop();
 
@@ -53,6 +59,12 @@ abstract class PluginRuntime {
 
   /// 让插件渲染一个插槽。返回 `{html, height}` 或 null。
   Future<Map<String, dynamic>?> renderSlot(String slot, Map<String, dynamic> context);
+
+  /// 给插件发一条事件（宿主→插件单向）。
+  ///
+  /// 界面上的按钮点击走这条。返回 false 表示插件没在跑 ——
+  /// 界面据此给用户明确反馈，而不是点下去毫无反应。
+  bool sendEvent(String event, [Map<String, dynamic>? payload]);
 
   /// 承载 WebView 的控件。宿主必须把它挂进树里，否则 Android 侧不会创建
   /// 底层 WebView，JS 也就不会跑。
@@ -108,8 +120,8 @@ class WebViewPluginRuntime implements PluginRuntime {
   @override
   List<PluginLogEntry> get logs => List<PluginLogEntry>.unmodifiable(_logs);
 
+  @override
   String? get failureReason => _failureReason;
-
   BridgeSession get session => _session;
 
   @override
@@ -252,6 +264,13 @@ class WebViewPluginRuntime implements PluginRuntime {
     }
     final r = reply.result;
     return r is Map<String, dynamic> ? r : null;
+  }
+
+  @override
+  bool sendEvent(String event, [Map<String, dynamic>? payload]) {
+    if (!isReady) return false;
+    // `event()` 自己负责投递；返回 null 表示会话未就绪
+    return _session.event(event, payload) != null;
   }
 
   Duration _toolTimeout(String name) {

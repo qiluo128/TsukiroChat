@@ -23,6 +23,7 @@ const List<String> demoTemplatePlugins = <String>[
   'assets/demo_plugins/time-plugin',
   'assets/demo_plugins/translate-button',
   'assets/demo_plugins/sakura-theme',
+  'assets/demo_plugins/status-panel',
 ];
 
 /// 原语注册表。
@@ -43,22 +44,44 @@ final primitiveRegistryProvider = Provider<PrimitiveRegistry>((ref) {
 /// 审计日志（内存，界面上能看到最近的插件活动）。
 final auditSinkProvider = Provider<AuditSink>((ref) => MemoryAuditSink());
 
+/// 插槽注册表。
+///
+/// **必须是单例** —— 界面渲染时查的是它，
+/// 如果界面拿的是另一个实例，插件 UI 永远显示不出来。
+final slotRegistryProvider = Provider<SlotRegistry>((ref) => SlotRegistry());
+
+/// 插件状态版本号。
+///
+/// 插槽 UI watch 它：插件启停 / 安装 / 卸载时 `PluginHost` 会
+/// `notifyListeners()`，这里把计数加一，界面就重建。
+///
+/// **不用 `invalidateSelf`** —— 那会把整个宿主重建掉，
+/// WebView 也跟着重建，插件会被重启。只是让界面重画就够了。
+final pluginHostRevisionProvider = StateProvider<int>((ref) => 0);
+
 /// 插件宿主。
 final pluginHostProvider = FutureProvider<PluginHost>((ref) async {
-  // 显式 watch，保证工具表 / 门禁 / 原语注册表都是同一组实例，
+  // 显式 watch，保证工具表 / 门禁 / 原语注册表 / 插槽表都是同一组实例，
   // 且在宿主存活期间不被回收
   final tools = ref.watch(toolRegistryProvider);
   final gatekeeper = ref.watch(gatekeeperProvider);
   final primitives = ref.watch(primitiveRegistryProvider);
+  final slots = ref.watch(slotRegistryProvider);
   final audit = ref.watch(auditSinkProvider);
 
   final host = PluginHost(
     toolRegistry: tools,
     gatekeeper: gatekeeper,
     primitiveRegistry: primitives,
+    slotRegistry: slots,
     audit: audit,
   );
   ref.onDispose(host.dispose);
+
+  final revision = ref.read(pluginHostRevisionProvider.notifier);
+  void bump() => revision.state = revision.state + 1;
+  host.addListener(bump);
+  ref.onDispose(() => host.removeListener(bump));
 
   await host.initialize();
   await _installDemoPluginsIfFirstRun(ref, host);

@@ -27,6 +27,13 @@ const List<String> knownSlots = <String>[
   'profile.actions',
   'global.fab',
   'plugin.detail',
+
+  // 智能体相关（docs/18 §7.1）。
+  // 智能体已经取代会话成为核心单位，插件自然需要往它的界面里塞东西
+  // （比如「查看 AI 心情」）。
+  'agent.header',
+  'agent.actions',
+  'agent.sections',
 ];
 
 /// 每个插槽的建议容量。超出不报错，宿主按 `order` 截断并聚合进「⋯」菜单。
@@ -36,6 +43,8 @@ const Map<String, int> slotCapacity = <String, int>{
   'chat.message.menu': 6,
   'chat.header': 2,
   'global.fab': 1,
+  'agent.actions': 3,
+  'agent.header': 3,
 };
 
 /// 注册表里的一条 UI 控件。

@@ -71,6 +71,11 @@ const Map<String, PermissionSpec> permissionCatalog = <String, PermissionSpec>{
 
   // ── UI ──
   'ui': PermissionSpec('ui', PermissionLevel.install, '弹提示、对话框、跳转插件页面'),
+  'chat.read': PermissionSpec(
+    'chat.read',
+    PermissionLevel.install,
+    '读取当前对话的上下文（最近一条消息、会话信息）',
+  ),
   'ui.overlay': PermissionSpec('ui.overlay', PermissionLevel.install, '在宿主界面上叠加覆盖层'),
 
   // ── 模型：消耗用户点数，安装弹窗必须提示 ──
@@ -132,6 +137,9 @@ const Map<String, PermissionSpec> permissionCatalog = <String, PermissionSpec>{
 /// **注意 `context` / `message` / `schedule` 都不在这里** —— 它们影响的是
 /// AI 说什么、对话长什么样、后台什么时候干活，全部需要显式授权。
 const Set<String> permissionFreeDomains = <String>{
+  // read 的是插件自己的配置段（manifest 里 provides.config 声明的），
+  // 不含任何用户数据 —— 不该让用户为它做决定。
+  'config',
   // 插件私有数据与纯计算
   'state',
   'crypto',
@@ -252,6 +260,11 @@ const Map<String, String> _domainDefaultPermissions = <String, String>{
   'mcp': 'mcp',
   'schedule': 'schedule',
   'ui': 'ui', // ui.overlay.* 是特例，见下
+  // chat.* 读的是用户的对话内容，该让用户知道并同意。
+  // 原先没有这个域，于是 requiredPermissionFor 返回域名 'chat'，
+  // 而 'chat' 不在权限目录里 → 门禁判「未知权限」直接拒。
+  // 表现是插件调 chat.lastMessage 必然失败，且看不出原因。
+  'chat': 'chat.read',
 };
 
 /// 某原语（如 `sys.time`、`fs.read`）所需的权限名。

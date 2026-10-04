@@ -35,7 +35,7 @@ class AgentListPage extends ConsumerWidget {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _createAgent(context, ref),
         backgroundColor: t.primary,
-        foregroundColor: Colors.white,
+        foregroundColor: t.onPrimary,
         icon: const Icon(Icons.add),
         label: const Text('新建智能体'),
       ),
@@ -165,7 +165,7 @@ class _AgentAvatar extends StatelessWidget {
         agent.initial,
         style: TextStyle(
           fontSize: size * 0.4,
-          color: Colors.white,
+          color: t.onPrimary,
           fontWeight: FontWeight.w600,
         ),
       ),
