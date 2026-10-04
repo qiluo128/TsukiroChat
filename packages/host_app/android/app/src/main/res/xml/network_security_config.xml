@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全性配置。
+
+  ## 为什么需要这个文件
+
+  Android 9（API 28）起，**默认禁止明文 HTTP 流量**。
+  本应用的用户可以自己填任意服务商的 Base URL，而国内大量中转站
+  只提供 `http://`（没有证书，或者证书不合规）。默认配置下这些
+  服务商会直接连不上，报错还很难懂（"Cleartext HTTP traffic not permitted"）。
+
+  ## 为什么是全局放开而不是白名单
+
+  白名单要求**提前知道域名**，但用户的服务商是运行时才知道的 ——
+  没法预先列出来。所以这里只能全局放开。
+  这是权衡后的选择，不是疏忽：功能可用性 > 理论上的中间人风险，
+  何况用户本来就是在把自己的 Key 交给那个服务商。
+
+  ## 补偿措施
+
+  宿主在设置页对 `http://` 的地址给出**明确警示**，
+  让用户知道自己在用明文连接（见 provider_edit_page.dart）。
+
+  ## 保留系统默认的信任锚
+
+  不覆盖 `trust-anchors` —— 也就是说仍然校验 HTTPS 证书，
+  只是额外允许了明文。不是"关掉 TLS 校验"。
+-->
+<network-security-config>
+
+    <!-- 默认：允许明文（用户自填的国内中转站经常是 http） -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!--
+      调试构建额外信任用户安装的证书。
+      抓包排障要用（Charles / mitmproxy），正式包里不生效 ——
+      这比全局信任用户证书安全。
+    -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+
+</network-security-config>

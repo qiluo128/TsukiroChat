@@ -127,13 +127,8 @@ class _AgentTile extends StatelessWidget {
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 2),
         child: Text(
-          agent.hasPersona
-              ? '${agent.conversationCount} 个对话 · ${agent.memoryCount} 条记忆'
-              : '还没设置人设',
-          style: TextStyle(
-            fontSize: 12.5,
-            color: agent.hasPersona ? t.textMuted : t.danger,
-          ),
+          '${agent.conversationCount} 个对话 · ${agent.memoryCount} 条记忆',
+          style: TextStyle(fontSize: 12.5, color: t.textMuted),
         ),
       ),
       trailing: IconButton(

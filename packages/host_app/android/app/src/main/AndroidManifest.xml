@@ -1,8 +1,31 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      INTERNET 权限。
+
+      **这一行必须放在 main，不能只放在 debug。**
+
+      Flutter 的模板默认只在 debug/profile 的 manifest 里加了 INTERNET
+      （因为调试时要热重载），main 里没有。结果：
+        - debug 构建能联网
+        - **release 构建没有 INTERNET 权限，所有网络请求瞬间失败**
+
+      表现是「测试连接」立刻报无网络，而不是超时 —— 因为请求压根没发出去。
+      这个坑很隐蔽：单测、analyze、debug 包全都正常，只有装 release 包才暴露。
+    -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!--
+      网络状态（用于区分「没联网」和「服务器连不上」，给用户更准的提示）。
+      不是必需的，但缺了它就只能笼统说「网络错误」。
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
     <application
-        android:label="tsukiro_chat"
+        android:label="Tsukiro Chat"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

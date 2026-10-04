@@ -80,7 +80,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               data: (messages) => messages.isEmpty
                   ? _EmptyState(
                       agentName: agent?.name,
-                      hasPersona: agent?.hasPersona ?? false,
                       onPick: _fillInput,
                     )
                   : _MessageList(
@@ -311,15 +310,10 @@ class _RoundButton extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({
-    required this.onPick,
-    this.agentName,
-    this.hasPersona = false,
-  });
+  const _EmptyState({required this.onPick, this.agentName});
 
   final void Function(String) onPick;
   final String? agentName;
-  final bool hasPersona;
 
   @override
   Widget build(BuildContext context) {
@@ -338,13 +332,6 @@ class _EmptyState extends StatelessWidget {
               agentName == null ? '开始聊天' : '和「$agentName」开始聊天',
               style: Theme.of(context).textTheme.titleSmall,
             ),
-            if (!hasPersona) ...<Widget>[
-              const SizedBox(height: 6),
-              Text(
-                '还没设置人设 —— 它的回答会比较通用',
-                style: TextStyle(fontSize: 12, color: t.textMuted),
-              ),
-            ],
             const SizedBox(height: 18),
             Wrap(
               spacing: 8,

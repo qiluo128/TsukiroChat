@@ -98,7 +98,7 @@ class _AgentEditPageState extends ConsumerState<AgentEditPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      '留空就是没有人设。不会替你填任何默认角色。',
+                      '留空也可以，不会替你填任何默认角色。',
                       style: TextStyle(fontSize: 12, color: t.textMuted),
                     ),
                     const SizedBox(height: 10),

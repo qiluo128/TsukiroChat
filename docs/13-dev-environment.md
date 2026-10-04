@@ -1,4 +1,4 @@
-# 13 · 开发环境
+﻿# 13 · 开发环境
 
 ## 1. 当前环境实况（本机实测）
 
@@ -74,6 +74,48 @@ but repository 'maven' was added by settings file 'settings.gradle.kts'
    **依次尝试**仓库，于是仍然先撞 `google()`（超时）—— **配置"看起来生效了"，构建照样卡住**
 
 **结论：镜像必须改 settings 层的声明顺序并放最前，不能做外围注入。**
+
+---
+
+## 1.3 Android 清单：两个只在 release 包上暴露的坑
+
+装机测试时「测试连接」直接报无网络（**不是超时，是瞬间失败**）。原因有两个，
+都只在 release 包上出现 —— debug 包、单测、`flutter analyze` 全都正常。
+
+### ① `INTERNET` 权限只在 `debug/AndroidManifest.xml` 里
+
+Flutter 的模板**故意**这么做（调试要热重载）。但 release 构建合并后的清单里
+**没有 INTERNET 权限**，所有网络请求瞬间失败。
+
+**修法**：把 `<uses-permission android:name="android.permission.INTERNET"/>`
+加到 `main/AndroidManifest.xml`。
+
+### ② Android 9+ 默认禁止明文 HTTP
+
+用户的 Base URL 常常是 `http://`（国内大量中转站没有证书）。
+默认配置下会被系统拦掉，报 `Cleartext HTTP traffic not permitted`。
+
+**修法**：加 `res/xml/network_security_config.xml` 并在 `<application>` 里引用。
+
+**为什么是全局放开而不是白名单**：白名单要求提前知道域名，
+而用户的服务商是运行时才知道的，没法预先列出。
+补偿措施是宿主在设置页对 `http://` 给出**明确警示**。
+
+> 为什么不阻止 http：国内大量中转站只有 http。
+> 阻止它们等于让这些用户完全用不了。
+
+### ③ 验证方式：`node scripts/verify_apk.mjs`
+
+这类问题**只有看最终产物才能发现**。而且有个反直觉的点：
+
+> **AGP 对 release 包会混淆资源文件名** ——
+> `res/xml/network_security_config.xml` 在 APK 里变成 `res/XX.xml`。
+> 按路径去 APK 里找，会得出"文件没打进去"的**错误结论**。
+
+所以脚本查两处：
+1. `build/app/intermediates/merged_manifest/release/.../AndroidManifest.xml`
+   —— Gradle 合并后的明文清单，这才是编译进包的那一份
+2. `aapt2 dump permissions <apk>` —— 从最终二进制反查
 "顺序"这种事不写进文档，下一个人一定会再踩一次。
 
 

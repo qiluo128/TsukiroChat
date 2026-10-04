@@ -13,8 +13,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:model_gateway/model_gateway.dart';
 
 import '../../providers/app_providers.dart';
+import '../../services/utility_model.dart';
 import '../../theme/app_theme.dart';
 import 'provider_edit_page.dart';
+import 'utility_model_page.dart';
 
 class ModelConfigPage extends ConsumerWidget {
   const ModelConfigPage({super.key});
@@ -160,6 +162,43 @@ class ModelConfigPage extends ConsumerWidget {
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size.fromHeight(44),
                     ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // ── ③ 高级 ──
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: t.spacing.page.toDouble()),
+                  child: Text(
+                    '高级',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: t.textMuted,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.auto_fix_high_outlined),
+                  title: const Text('工具模型'),
+                  subtitle: Text(
+                    ref.watch(effectiveUtilityModelProvider)?.label ?? '自动选择',
+                    style: TextStyle(fontSize: 12.5, color: t.textMuted),
+                  ),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const UtilityModelPage()),
+                  ),
+                ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    t.spacing.page.toDouble(), 0, t.spacing.page.toDouble(), 0,
+                  ),
+                  child: Text(
+                    '生成对话标题、做摘要这类副任务用的模型。默认自动选择。',
+                    style: TextStyle(fontSize: 11.5, color: t.textMuted, height: 1.5),
                   ),
                 ),
               ],

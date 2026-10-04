@@ -411,8 +411,6 @@ class _AgentStatusBar extends StatelessWidget {
         _Chip(icon: Icons.memory, text: modelLabel!)
       else
         _Chip(icon: Icons.error_outline, text: '未配置模型', danger: true),
-      if (!agent.hasPersona)
-        _Chip(icon: Icons.person_off_outlined, text: '未设人设', danger: true),
       _Chip(
         icon: Icons.psychology_outlined,
         text: '记忆${agent.memory.scope.label}',

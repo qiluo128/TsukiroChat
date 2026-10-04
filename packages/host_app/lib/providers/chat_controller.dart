@@ -10,6 +10,7 @@ import 'package:plugin_core/plugin_core.dart';
 
 import '../data/models.dart';
 import '../data/repositories.dart';
+import '../services/utility_model.dart';
 import 'app_providers.dart';
 
 /// 流式输出中的临时缓冲。
@@ -165,13 +166,18 @@ class ChatController {
 
       // ── 定稿 ──
       final buffer = _ref.read(streamingBufferProvider);
+      final finalText = turn.finalText.isEmpty ? (buffer?.text ?? '') : turn.finalText;
       await repos.messages.update(
         assistantId,
-        content: turn.finalText.isEmpty ? (buffer?.text ?? '') : turn.finalText,
+        content: finalText,
         reasoning: turn.reasoning ?? buffer?.reasoning,
         status: MessageStatus.done,
       );
       await repos.conversations.touch(conversationId);
+
+      // ── 用工具模型生成一个更好的标题 ──
+      // 放在定稿之后：标题生成慢也不该拖住这条回复的显示。
+      await _maybeGenerateTitle(repos, conversationId, text, finalText);
     } on _Cancelled {
       await _finalize(repos, assistantId, conversationId,
           status: MessageStatus.cancelled,
@@ -215,6 +221,37 @@ class ChatController {
       errorCode: errorCode,
     );
     await repos.conversations.touch(conversationId);
+  }
+
+  /// 用工具模型给对话起个更好的标题。
+  ///
+  /// **只在第一轮之后做一次**。判断方式是「对话里正好两条消息」——
+  /// 这样不需要额外存一个「已生成」标记，也不会在后续轮次反复改名。
+  ///
+  /// 失败**完全静默**：`prepareTurn` 已经把用户第一句当占位标题了，
+  /// 生成不出来就保持那个，用户不会有任何感知。
+  Future<void> _maybeGenerateTitle(
+    Repos repos,
+    String conversationId,
+    String userText,
+    String assistantText,
+  ) async {
+    final service = _ref.read(utilityModelServiceProvider);
+    if (!service.isAvailable) return;
+
+    final conversation = await repos.conversations.get(conversationId);
+    if (conversation == null || conversation.messageCount != 2) return;
+
+    final title = await service.generateTitle(
+      userText: userText,
+      assistantText: assistantText,
+    );
+    if (title == null || title.trim().isEmpty) return;
+    if (title == conversation.title) return;
+
+    await repos.conversations.rename(conversationId, title);
+    _ref.invalidate(conversationProvider(conversationId));
+    _ref.invalidate(conversationListProvider);
   }
 
   /// 组装给模型的历史消息。
