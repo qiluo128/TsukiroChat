@@ -1,4 +1,12 @@
-# 10 · 数据模型
+﻿# 10 · 数据模型
+
+> ⚠️ **本文的 v1 表结构已被 [18-agent-and-memory](18-agent-and-memory.md) 修正。**
+>
+> 核心变化：**智能体（Agent）取代会话（Session）成为顶层单位**。
+> `sessions` 表拆成 `agents` + `conversations`，并新增 `memories` / `providers` / `provider_models`。
+>
+> 本文保留作为历史设计与通用约定（索引、迁移规则、沙箱布局）的参考；
+> **表结构以 18 为准。**
 
 > 双轨：**宿主数据**（会话、消息、插件元信息）存 SQLite；**插件数据**（state、文件）按沙箱目录隔离。
 

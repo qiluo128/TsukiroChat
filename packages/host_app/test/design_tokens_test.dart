@@ -106,7 +106,7 @@ void main() {
   group('阴影与缓动是枚举查表，不是字符串解析', () {
     test('每一档都有对应的 BoxShadow', () {
       final t = AppTokens.defaults();
-      for (final level in shadowLevels) {
+      for (final _ in shadowLevels) {
         final shadows = t.shadowFor('shadow.card');
         // 只要不抛异常即可；none 返回空列表是合法的
         expect(shadows, isA<List<BoxShadow>>());

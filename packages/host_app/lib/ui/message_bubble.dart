@@ -17,11 +17,18 @@ class MessageBubble extends StatelessWidget {
   const MessageBubble({
     super.key,
     required this.message,
+    this.agentInitial = '?',
     this.streaming,
     this.showReasoning = false,
   });
 
   final StoredChatMessage message;
+
+  /// 头像上那个字 —— 来自智能体的名字首字。
+  ///
+  /// **不再是写死的**：以前这里硬编码了内置人设的名字，那与
+  /// 「AI 不要有默认人设」冲突（见 `docs/18-agent-and-memory.md` §6）。
+  final String agentInitial;
 
   /// 流式缓冲（只有正在输出的那一条才有）。
   final StreamingBuffer? streaming;
@@ -50,7 +57,7 @@ class MessageBubble extends StatelessWidget {
             mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              if (!isUser) const _Avatar(name: '雪'),
+              if (!isUser) _Avatar(name: agentInitial),
               if (!isUser) const SizedBox(width: 8),
               Flexible(
                 child: GestureDetector(
@@ -341,6 +348,10 @@ class _Avatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
+    // 名字可能是空的；用 runes.first 而不是 [0] —— 后者会把 emoji
+    // 或某些中文字截成半个码点，渲染出乱码方块
+    final trimmed = name.trim();
+    final initial = trimmed.isEmpty ? '?' : String.fromCharCode(trimmed.runes.first);
     return Container(
       width: 32,
       height: 32,
@@ -352,7 +363,7 @@ class _Avatar extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: Text(
-        name.characters.first,
+        initial,
         style: const TextStyle(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w600),
       ),
     );

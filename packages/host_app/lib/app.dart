@@ -7,20 +7,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'providers/app_providers.dart';
 import 'theme/app_theme.dart';
 import 'theme/design_tokens.dart';
-import 'ui/session_list_page.dart';
-import 'ui/settings_page.dart';
+import 'ui/agent_list_page.dart';
+import 'ui/settings/settings_page.dart';
 
 /// 当前生效的设计令牌。
 ///
-/// 现在是宿主默认值。接入美化包之后，这里改成"从已启用的主题插件取
-/// [ThemeDeclaration] → `AppTokens.fromTheme(...)`"，**其余代码一行不用改** ——
-/// 所有控件都是通过 `context.tokens` 取值的。
+/// 现在是宿主默认值。接入美化包后这里改成「从已启用的主题插件取
+/// ThemeDeclaration → AppTokens.fromTheme(...)」，**其余代码一行不用改** ——
+/// 所有控件都是通过 context.tokens 取值的。
 final appTokensProvider = Provider<AppTokens>((ref) => AppTokens.defaults());
 
-/// 路由名。
 abstract final class Routes {
-  static const String sessions = '/';
-  static const String chat = '/chat';
   static const String settings = '/settings';
 }
 
@@ -40,42 +37,25 @@ class TsukiroApp extends ConsumerWidget {
       locale: const Locale('zh', 'CN'),
       home: const _Bootstrap(),
       routes: <String, WidgetBuilder>{
-        // chat 需要 sessionId，不能用无参路由 —— 由会话列表 push 进来
         Routes.settings: (_) => const SettingsPage(),
-      },
-      onGenerateRoute: (settings) {
-        if (settings.name == Routes.settings) {
-          return MaterialPageRoute<void>(builder: (_) => const SettingsPage());
-        }
-        return null;
       },
     );
   }
 }
 
-/// 启动闸门：等数据库和配置就绪再进主界面。
+/// 启动闸门：等数据库与仓储就绪再进主界面。
 ///
 /// 特意做成全屏 loading + 明确的错误页，而不是"边加载边显示半成品" ——
-/// 首次启动要建库、读配置，让用户看到进度比看到闪烁的空白强。
+/// 首次启动要建库、做 v1→v2 迁移、读开发配置，让用户看到进度比看到闪烁的空白强。
 class _Bootstrap extends ConsumerWidget {
   const _Bootstrap();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final db = ref.watch(databaseProvider);
-    final config = ref.watch(appConfigProvider);
+    final repos = ref.watch(reposProvider);
 
-    final error = db.error ?? config.error;
-    if (error != null) {
-      return _StartupError(error: error, onRetry: () {
-        ref.invalidate(databaseProvider);
-        ref.invalidate(appConfigProvider);
-      });
-    }
-
-    final ready = db.hasValue && config.hasValue;
-    if (!ready) {
-      return const Scaffold(
+    return repos.when(
+      loading: () => const Scaffold(
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -86,10 +66,13 @@ class _Bootstrap extends ConsumerWidget {
             ],
           ),
         ),
-      );
-    }
-
-    return const SessionListPage();
+      ),
+      error: (e, _) => _StartupError(
+        error: e,
+        onRetry: () => ref.invalidate(reposProvider),
+      ),
+      data: (_) => const AgentListPage(),
+    );
   }
 }
 

@@ -9,11 +9,12 @@ import '../providers/app_providers.dart';
 import '../providers/chat_controller.dart';
 import '../theme/app_theme.dart';
 import 'message_bubble.dart';
+import 'user_error.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
-  const ChatPage({super.key, required this.sessionId});
+  const ChatPage({super.key, required this.conversationId});
 
-  final String sessionId;
+  final String conversationId;
 
   @override
   ConsumerState<ChatPage> createState() => _ChatPageState();
@@ -37,13 +38,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    final messagesAsync = ref.watch(messagesProvider(widget.sessionId));
+    final conversation =
+        ref.watch(conversationProvider(widget.conversationId)).valueOrNull;
+    final agentId = conversation?.agentId;
+
+    final messagesAsync = ref.watch(messagesProvider(widget.conversationId));
     final streaming = ref.watch(streamingBufferProvider);
     final sending = ref.watch(sendingProvider);
-    final ready = ref.watch(modelGatewayProvider) != null;
+    final ready = agentId != null && ref.watch(gatewayForAgentProvider(agentId)) != null;
+    final agent =
+        agentId == null ? null : ref.watch(agentProvider(agentId)).valueOrNull;
 
     ref.listen<AsyncValue<List<StoredChatMessage>>>(
-      messagesProvider(widget.sessionId),
+      messagesProvider(widget.conversationId),
       (_, next) {
         if (next.hasValue) _scrollToBottom();
       },
@@ -51,7 +58,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('对话'),
+        title: Text(conversation?.title ?? '对话'),
         actions: <Widget>[
           IconButton(
             tooltip: _showReasoning ? '隐藏思维链' : '显示思维链',
@@ -61,11 +68,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             ),
             onPressed: () => setState(() => _showReasoning = !_showReasoning),
           ),
-          IconButton(
-            tooltip: '设置',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.of(context).pushNamed('/settings'),
-          ),
         ],
       ),
       body: Column(
@@ -74,14 +76,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           Expanded(
             child: messagesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('$e')),
+              error: (e, _) => Center(child: Text(userFacingError(e))),
               data: (messages) => messages.isEmpty
-                  ? _EmptyState(onPick: _fillInput)
+                  ? _EmptyState(
+                      agentName: agent?.name,
+                      hasPersona: agent?.hasPersona ?? false,
+                      onPick: _fillInput,
+                    )
                   : _MessageList(
                       controller: _scroll,
                       messages: messages,
                       streaming: streaming,
                       showReasoning: _showReasoning,
+                      agentInitial: agent?.initial ?? '?',
                     ),
             ),
           ),
@@ -112,24 +119,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _scrollToBottom();
 
     try {
-      await controller.send(sessionId: widget.sessionId, text: text);
+      await controller.send(conversationId: widget.conversationId, text: text);
     } catch (e) {
       if (!mounted) return;
-      // 错误已经写进消息里了（气泡上有提示），这里只补一个轻提示，
-      // 免得用户完全不知道发生了什么
+      // 错误已经写进消息里了（气泡上有提示），这里只补一个轻提示
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_friendly(e)), duration: const Duration(seconds: 4)),
+        SnackBar(content: Text(userFacingError(e)), duration: const Duration(seconds: 4)),
       );
     }
-  }
-
-  static String _friendly(Object e) {
-    final s = e.toString();
-    if (s.contains('还没有配置模型')) return '还没有配置模型，去设置里填一下';
-    if (s.contains('PERMISSION_DENIED')) return 'API Key 不正确或无权限';
-    if (s.contains('NETWORK_ERROR')) return '网络连不上';
-    if (s.contains('TIMEOUT')) return '响应超时';
-    return '发送失败：${s.length > 80 ? '${s.substring(0, 80)}…' : s}';
   }
 
   void _scrollToBottom() {
@@ -151,12 +148,14 @@ class _MessageList extends StatelessWidget {
     required this.messages,
     required this.streaming,
     required this.showReasoning,
+    required this.agentInitial,
   });
 
   final ScrollController controller;
   final List<StoredChatMessage> messages;
   final StreamingBuffer? streaming;
   final bool showReasoning;
+  final String agentInitial;
 
   @override
   Widget build(BuildContext context) {
@@ -164,7 +163,6 @@ class _MessageList extends StatelessWidget {
     return ListView.builder(
       controller: controller,
       padding: EdgeInsets.symmetric(vertical: t.spacing.page.toDouble() / 2),
-      // +1 给顶部留一点空间，键盘弹出时第一条不会贴着 AppBar
       itemCount: messages.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) return const SizedBox(height: 4);
@@ -172,6 +170,7 @@ class _MessageList extends StatelessWidget {
         return MessageBubble(
           key: ValueKey<String>(m.id),
           message: m,
+          agentInitial: agentInitial,
           // 只有正在流式输出那一条才吃缓冲
           streaming: (streaming != null && streaming!.messageId == m.id) ? streaming : null,
           showReasoning: showReasoning,
@@ -255,13 +254,10 @@ class _ComposerState extends State<_Composer> {
                 hintText: widget.enabled ? '说点什么…' : '先配置模型',
                 isDense: true,
               ),
-              onSubmitted: (_) {
-                if (canSend) widget.onSend();
-              },
             ),
           ),
           const SizedBox(width: 10),
-          // 发送中变成"停止" —— 长回复时用户需要能中断
+          // 发送中变成"停止" —— 推理模型一次 20–30 秒，用户需要能中断
           if (widget.sending)
             _RoundButton(
               icon: Icons.stop_rounded,
@@ -275,7 +271,7 @@ class _ComposerState extends State<_Composer> {
               onTap: canSend
                   ? () {
                       widget.onSend();
-                      // 连续发消息时保持焦点，不用每次点一下输入框
+                      // 连续发消息时保持焦点
                       widget.focusNode.requestFocus();
                     }
                   : null,
@@ -315,14 +311,20 @@ class _RoundButton extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onPick});
+  const _EmptyState({
+    required this.onPick,
+    this.agentName,
+    this.hasPersona = false,
+  });
 
   final void Function(String) onPick;
+  final String? agentName;
+  final bool hasPersona;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    const starters = <String>['在吗', '今天有点累', '讲个冷笑话'];
+    const starters = <String>['你好', '在吗', '介绍一下你自己'];
 
     return Center(
       child: Padding(
@@ -332,7 +334,17 @@ class _EmptyState extends StatelessWidget {
           children: <Widget>[
             Icon(Icons.auto_awesome_outlined, size: 40, color: t.textMuted),
             const SizedBox(height: 12),
-            Text('开始聊天', style: Theme.of(context).textTheme.titleSmall),
+            Text(
+              agentName == null ? '开始聊天' : '和「$agentName」开始聊天',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            if (!hasPersona) ...<Widget>[
+              const SizedBox(height: 6),
+              Text(
+                '还没设置人设 —— 它的回答会比较通用',
+                style: TextStyle(fontSize: 12, color: t.textMuted),
+              ),
+            ],
             const SizedBox(height: 18),
             Wrap(
               spacing: 8,
@@ -371,13 +383,13 @@ class _NoModelBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '还没有配置模型',
+              '还没有可用的模型',
               style: TextStyle(fontSize: 13, color: t.danger),
             ),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pushNamed('/settings'),
-            child: const Text('去设置'),
+            child: const Text('去配置'),
           ),
         ],
       ),

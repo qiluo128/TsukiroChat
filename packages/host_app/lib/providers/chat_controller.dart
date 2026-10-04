@@ -1,16 +1,15 @@
 /// 聊天状态机。
 ///
 /// 关键设计：**走 plugin_core 的 [AgentLoop]，不另起一套循环**。
-/// 将来接入插件（工具调用、钩子、上下文注入）时，这个文件一行都不用改 ——
-/// 只是 `tools` / `gatekeeper` 里开始有东西而已。
+/// 将来接入插件（工具调用、钩子、上下文注入）时，这个文件几乎不用改 ——
+/// 只是 `tools` / `gatekeeper` 里开始有东西。
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
 
-import '../data/database.dart';
 import '../data/models.dart';
+import '../data/repositories.dart';
 import 'app_providers.dart';
 
 /// 流式输出中的临时缓冲。
@@ -28,7 +27,6 @@ class StreamingBuffer {
   final String text;
   final String? reasoning;
 
-  /// 已经收到过正文（用于区分"在想"和"在说"）。
   bool get hasText => text.trim().isNotEmpty;
 
   /// 收到过思维链但还没正文 —— 推理模型的"思考中"阶段。
@@ -49,10 +47,6 @@ final streamingBufferProvider = StateProvider<StreamingBuffer?>((ref) => null);
 /// 发送中的标记（含工具调用阶段 —— 那时还没有正文流）。
 final sendingProvider = StateProvider<bool>((ref) => false);
 
-/// 本轮的工具调用记录，供界面显示"正在查时间…"这类状态。
-final activeToolCallsProvider =
-    StateProvider<List<String>>((ref) => const <String>[]);
-
 /// 用户主动取消。
 class _Cancelled implements Exception {
   const _Cancelled();
@@ -63,66 +57,73 @@ class ChatController {
   ChatController(this._ref);
 
   final Ref _ref;
-
   bool _cancelled = false;
+
+  /// 是否有一轮正在跑。**不用 provider 读** —— 那是异步的，
+  /// 两次快速点击可能都读到 false。
+  bool _sending = false;
 
   /// 取消当前这一轮。
   ///
   /// 实现方式是在流式回调里抛异常 —— 那会取消 `await for` 的订阅，
-  /// 从而真正断掉 HTTP 流，而不只是"界面上不显示了"。
+  /// 从而**真正断掉 HTTP 流**，而不只是"界面上不显示了"。
   void cancel() => _cancelled = true;
 
   /// 发一条消息并等模型回完。
-  Future<void> send({required String sessionId, required String text}) async {
+  ///
+  /// 同一时间只允许一轮。重复调用会抛 [StateError] —— 界面上表现为
+  /// 「已有一轮对话正在发送，请先等待或取消」。
+  Future<void> send({required String conversationId, required String text}) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
-    final repo = _ref.read(chatRepositoryProvider);
-    final gateway = _ref.read(modelGatewayProvider);
-    final persona = _ref.read(personaProvider);
+    // ── 并发保护 ──
+    // 拦在这里而不是靠界面禁用按钮：工具调用期间没有正文流，
+    // 按钮状态和真实状态会脱节，只有控制器自己知道有没有在跑。
+    if (_sending) {
+      throw StateError('已有一轮对话正在发送');
+    }
+    _sending = true;
 
+    try {
+      await _send(conversationId: conversationId, text: trimmed);
+    } finally {
+      _sending = false;
+    }
+  }
+
+  Future<void> _send({required String conversationId, required String text}) async {
+    final repos = await _ref.read(reposProvider.future);
+
+    // ── 解析这轮要用的人设与模型 ──
+    final conversation = await repos.conversations.get(conversationId);
+    if (conversation == null) {
+      throw StateError('对话不存在（可能已被删除）');
+    }
+    final agent = await repos.agents.get(conversation.agentId);
+    if (agent == null) {
+      throw StateError('这个对话所属的智能体已被删除');
+    }
+
+    final gateway = _ref.read(gatewayForAgentProvider(agent.id));
     if (gateway == null) {
-      throw StateError('还没有配置模型。请到「设置 → 模型」填写 Base URL 与 API Key。');
+      throw StateError('还没有可用的模型。请到「设置 → 模型配置 → 配置 API」添加服务商。');
     }
 
     _cancelled = false;
     _ref.read(sendingProvider.notifier).state = true;
-    _ref.read(activeToolCallsProvider.notifier).state = const <String>[];
 
-    // ── 落库：用户消息 ──
-    final seq = await repo.nextSeq(sessionId);
-    await repo.insertMessage(StoredChatMessage(
-      id: newId('m'),
-      sessionId: sessionId,
-      role: ChatRole.user,
-      content: trimmed,
-      seq: seq,
-      createdAt: DateTime.now(),
-    ));
-
-    // 第一条用户消息顺便当会话标题 —— 让会话列表有辨识度
-    final session = await repo.getSession(sessionId);
-    if (session != null && (session.title == '新对话' || session.title.trim().isEmpty)) {
-      await repo.renameSession(sessionId, _titleFrom(trimmed));
-    }
-
-    // ── 落库：助手占位消息（status=streaming）──
-    final assistantId = newId('m');
-    await repo.insertMessage(StoredChatMessage(
-      id: assistantId,
-      sessionId: sessionId,
-      role: ChatRole.assistant,
-      status: MessageStatus.streaming,
-      seq: seq + 1,
-      createdAt: DateTime.now(),
-    ));
+    // ── 落库：用户消息 + 助手占位，**一个事务里做完** ──
+    // 分两次插入的话，进程在中间被杀会留下一条永远等不到回复的用户消息。
+    final turn = await repos.messages.prepareTurn(conversationId, userText: text);
+    final assistantId = turn.assistantMessageId;
 
     _ref.read(streamingBufferProvider.notifier).state =
         StreamingBuffer(messageId: assistantId);
-    _ref.invalidate(messagesProvider(sessionId));
+    _ref.invalidate(messagesProvider(conversationId));
 
-    // ── 组装历史 ──
-    final history = await _buildHistory(repo, sessionId, excludeIds: <String>{assistantId});
+    final history =
+        await _buildHistory(repos, conversationId, excludeIds: <String>{assistantId});
 
     try {
       final loop = AgentLoop(
@@ -130,20 +131,21 @@ class ChatController {
         tools: _ref.read(toolRegistryProvider),
         hooks: _ref.read(hookBusProvider),
         gateway: gateway,
-        // 插件运行时还没接 —— 有工具时会走到这里并如实报错，
-        // 而不是假装成功
+        // 插件运行时还没接 —— 有工具时会走到这里并**如实报错**，而不是假装成功
         invokeTool: (pluginId, handler, args) async => ToolInvocationResult.failure(
           'NO_RUNTIME',
           '插件运行时尚未接入（$pluginId 的 $handler）',
         ),
-        persona: persona.systemPrompt,
+        // 人设可能为空 —— AgentLoop 在空串时**不注入 system 消息**，
+        // 而不是替用户塞一句"你是一个助手"（见 docs/18 §6）
+        persona: agent.persona.buildSystemPrompt(),
         maxSteps: 4,
         streamingCall: gateway.completeStreamingForLoop,
       );
 
       final turn = await loop.run(
-        sessionId: sessionId,
-        userText: trimmed,
+        sessionId: conversationId,
+        userText: text,
         history: history,
         onDelta: (content, reasoning) {
           if (_cancelled) throw const _Cancelled();
@@ -155,7 +157,7 @@ class ChatController {
       );
 
       if (_cancelled) {
-        await _finalize(repo, assistantId, sessionId,
+        await _finalize(repos, assistantId, conversationId,
             status: MessageStatus.cancelled,
             buffer: _ref.read(streamingBufferProvider));
         return;
@@ -163,25 +165,25 @@ class ChatController {
 
       // ── 定稿 ──
       final buffer = _ref.read(streamingBufferProvider);
-      await repo.updateMessage(
+      await repos.messages.update(
         assistantId,
         content: turn.finalText.isEmpty ? (buffer?.text ?? '') : turn.finalText,
         reasoning: turn.reasoning ?? buffer?.reasoning,
         status: MessageStatus.done,
       );
-      await repo.touchSession(sessionId);
+      await repos.conversations.touch(conversationId);
     } on _Cancelled {
-      await _finalize(repo, assistantId, sessionId,
+      await _finalize(repos, assistantId, conversationId,
           status: MessageStatus.cancelled,
           buffer: _ref.read(streamingBufferProvider));
     } on TsukiroException catch (e) {
-      await _finalize(repo, assistantId, sessionId,
+      await _finalize(repos, assistantId, conversationId,
           status: MessageStatus.error,
           errorCode: errorCodeToString(e.code),
           buffer: _ref.read(streamingBufferProvider));
       rethrow;
     } catch (e) {
-      await _finalize(repo, assistantId, sessionId,
+      await _finalize(repos, assistantId, conversationId,
           status: MessageStatus.error,
           errorCode: 'INTERNAL',
           buffer: _ref.read(streamingBufferProvider));
@@ -189,9 +191,7 @@ class ChatController {
     } finally {
       _ref.read(streamingBufferProvider.notifier).state = null;
       _ref.read(sendingProvider.notifier).state = false;
-      _ref.read(activeToolCallsProvider.notifier).state = const <String>[];
-      _ref.invalidate(messagesProvider(sessionId));
-      _ref.invalidate(sessionListProvider);
+      _ref.invalidate(messagesProvider(conversationId));
     }
   }
 
@@ -200,40 +200,40 @@ class ChatController {
   /// 出错 / 被取消时**保留已经收到的部分** —— 用户看到半句话，
   /// 比看到一片空白更能理解发生了什么。
   Future<void> _finalize(
-    ChatRepository repo,
+    Repos repos,
     String messageId,
-    String sessionId, {
+    String conversationId, {
     required MessageStatus status,
     String? errorCode,
     StreamingBuffer? buffer,
   }) async {
-    await repo.updateMessage(
+    await repos.messages.update(
       messageId,
       content: buffer?.text ?? '',
       reasoning: buffer?.reasoning,
       status: status,
       errorCode: errorCode,
     );
-    await repo.touchSession(sessionId);
+    await repos.conversations.touch(conversationId);
   }
 
   /// 组装给模型的历史消息。
   ///
-  /// 只带 `user` / `assistant` 且有内容的 —— `system` 由 AgentLoop 的 persona 提供，
+  /// 只带 `user` / `assistant` 且有内容的：`system` 由 AgentLoop 的 persona 提供，
   /// `tool` 结果属于上一轮的工具循环，不跨轮携带。
   Future<List<ChatMessage>> _buildHistory(
-    ChatRepository repo,
-    String sessionId, {
+    Repos repos,
+    String conversationId, {
     Set<String> excludeIds = const <String>{},
   }) async {
-    final all = await repo.listMessages(sessionId, limit: 60);
+    final all = await repos.messages.list(conversationId, limit: 60);
     final usable = all.where((m) {
       if (excludeIds.contains(m.id)) return false;
       if (m.status == MessageStatus.streaming) return false;
       if (m.role != ChatRole.user && m.role != ChatRole.assistant) return false;
       // 出错的助手消息不进历史 —— 否则模型会看到自己"上次说了半句话"
       if (m.status == MessageStatus.error) return false;
-      return (m.content?.trim().isNotEmpty ?? false);
+      return m.content?.trim().isNotEmpty ?? false;
     }).toList();
 
     // 最后一条是刚插进去的这条用户消息，要排除（AgentLoop 会用 userText 再加一次）
@@ -241,36 +241,16 @@ class ChatController {
       usable.removeLast();
     }
 
-    // 历史里的 assistant 消息带 tool_calls 但缺 tool 结果，会让部分上游 400。
-    // 这一轮不接插件工具，所以剥掉 tool_calls 只留文本。
+    // 这一轮不接插件工具，所以剥掉 tool_calls 只留文本 ——
+    // 带 tool_calls 但没有对应 tool 结果的助手消息会让部分上游 400。
     return usable
         .map((m) => ChatMessage(role: m.role, content: m.content))
         .toList(growable: false);
   }
-
-  static String _titleFrom(String text) {
-    final flat = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return flat.length <= 18 ? flat : '${flat.substring(0, 18)}…';
-  }
 }
 
+/// 全局单例。
+///
+/// 控制器持有 [_sending] 这类跨帧状态，所以**必须是单例** ——
+/// 每次 read 都 new 一个的话，并发保护就形同虚设。
 final chatControllerProvider = Provider<ChatController>((ref) => ChatController(ref));
-
-// ─────────────────────────── 插件基础设施（暂空） ───────────────────────────
-//
-// 现在还没有插件运行时，所以这三个是空的。但**它们必须是真实对象**而不是
-// 在控制器里临时 new —— 插件系统接入时只往里注册，调用方一行不改。
-
-final gatekeeperProvider = Provider<Gatekeeper>((ref) => Gatekeeper());
-
-final toolRegistryProvider = Provider<ToolRegistry>((ref) => ToolRegistry());
-
-final hookBusProvider = Provider<HookBus>((ref) {
-  return HookBus(
-    dispatcher: (registration, context) async {
-      // 没有插件运行时 → 没有钩子可调。返回 null 表示"无改动"。
-      debugPrint('[hook] ${registration.phase.name} 没有运行时，跳过');
-      return null;
-    },
-  );
-});

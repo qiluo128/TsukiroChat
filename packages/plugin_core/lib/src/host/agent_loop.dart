@@ -344,8 +344,14 @@ class AgentLoop {
     );
     ctx.hookFailures.addAll((await hooks.emit(HookPhase.beforeModel, beforeCtx)).failures);
 
+    // **人设为空时不注入 system 消息**，而不是塞一个空串或一句
+    // "你是一个助手"。用户没设人设，就是想让模型用自己默认的行为 ——
+    // 宿主替他写一句系统提示词，等于替他做了决定（见 docs/18 §6）。
+    //
+    // 注意：钩子有机会改 systemPrompt，所以判断要放在钩子之后。
+    final systemPrompt = beforeCtx.systemPrompt.trim();
     final wire = <ChatMessage>[
-      ChatMessage.system(beforeCtx.systemPrompt),
+      if (systemPrompt.isNotEmpty) ChatMessage.system(systemPrompt),
       ...beforeCtx.mutableMessages,
     ];
 

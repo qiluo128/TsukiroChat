@@ -1,16 +1,13 @@
 /// 本地 SQLite。
 ///
-/// 表结构见 `docs/10-data-model.md`。Demo 阶段用 sqflite 手工写 SQL，
-/// 理由是表结构已定稿、且避开 build_runner 代码生成（每次改表都要跑一次）。
+/// **schema v2**：智能体（Agent）取代会话成为顶层单位。
+/// 见 `docs/18-agent-and-memory.md`。
+///
+/// v1 只有 `sessions` + `messages` —— 那只在只有一个 AI 角色时成立。
 library;
 
-import 'dart:convert';
-
 import 'package:path/path.dart' as p;
-import 'package:plugin_core/plugin_core.dart';
 import 'package:sqflite/sqflite.dart';
-
-import 'models.dart';
 
 /// 数据库封装。
 class AppDatabase {
@@ -18,59 +15,81 @@ class AppDatabase {
 
   final Database db;
 
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
   static const String fileName = 'tsukiro.db';
 
-  /// 打开（或创建）数据库。
-  ///
-  /// [directory] 由宿主提供（Android 上是应用私有目录）；测试里传临时目录。
+  /// 迁移时给旧会话挂的默认智能体 id。
+  static const String legacyAgentId = 'agent_default';
+
   static Future<AppDatabase> open(String directory) async {
     final path = p.join(directory, fileName);
     final db = await openDatabase(
       path,
       version: schemaVersion,
       onConfigure: (db) async {
-        // 外键约束默认是关的 —— 不显式打开，删会话时消息不会级联删除
+        // 外键约束默认关着 —— 不显式打开，删智能体时对话不会级联删除
         await db.execute('PRAGMA foreign_keys = ON');
       },
       onCreate: (db, version) async {
-        await _createSchema(db);
+        await _createV2(db);
       },
       onUpgrade: (db, from, to) async {
         // 每个版本一段，必须能单独回放（见 docs/10 §2.7）
-        // if (from < 2) { ... }
+        if (from < 2) {
+          await _migrateV1ToV2(db);
+        }
       },
     );
     return AppDatabase._(db);
   }
 
-  static Future<void> _createSchema(Database db) async {
+  // ═══════════════════════════ v2 schema ═══════════════════════════
+
+  static Future<void> _createV2(Database db) async {
     final batch = db.batch();
 
+    // ── 智能体 ──
     batch.execute('''
-      CREATE TABLE sessions (
+      CREATE TABLE agents (
+        id            TEXT PRIMARY KEY,
+        name          TEXT NOT NULL,
+        avatar_path   TEXT,
+        persona       TEXT NOT NULL DEFAULT '{}',
+        model_config  TEXT NOT NULL DEFAULT '{}',
+        memory_config TEXT NOT NULL DEFAULT '{}',
+        created_at    INTEGER NOT NULL,
+        updated_at    INTEGER NOT NULL
+      )
+    ''');
+    batch.execute('CREATE INDEX idx_agents_updated ON agents(updated_at DESC)');
+
+    // ── 对话 ──
+    batch.execute('''
+      CREATE TABLE conversations (
         id              TEXT PRIMARY KEY,
+        agent_id        TEXT NOT NULL,
         title           TEXT NOT NULL,
-        persona_id      TEXT,
-        model           TEXT,
+        status          TEXT NOT NULL DEFAULT 'active',
         created_at      INTEGER NOT NULL,
         updated_at      INTEGER NOT NULL,
         last_message_at INTEGER,
         message_count   INTEGER NOT NULL DEFAULT 0,
-        archived        INTEGER NOT NULL DEFAULT 0
+        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
       )
     ''');
-    batch.execute('CREATE INDEX idx_sessions_sort ON sessions(archived, updated_at DESC)');
+    batch.execute(
+        'CREATE INDEX idx_conv_agent ON conversations(agent_id, status, updated_at DESC)');
 
+    // ── 消息 ──
     batch.execute('''
       CREATE TABLE messages (
         id                TEXT PRIMARY KEY,
-        session_id        TEXT NOT NULL,
+        conversation_id   TEXT NOT NULL,
         role              TEXT NOT NULL,
         content           TEXT,
+        rich_content      TEXT,
         tool_calls        TEXT,
         tool_call_id      TEXT,
-        plugin_id         TEXT,
         status            TEXT NOT NULL DEFAULT 'done',
         error_code        TEXT,
         seq               INTEGER NOT NULL,
@@ -78,15 +97,62 @@ class AppDatabase {
         tokens_prompt     INTEGER,
         tokens_completion INTEGER,
         reasoning         TEXT,
-        meta              TEXT,
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        metadata          TEXT,
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
       )
     ''');
     // 会话内按 seq 唯一。**排序用它而不是 created_at** ——
-    // 同一毫秒内可能插入多条（用户消息 + 工具结果），时间戳会乱序。
-    batch.execute('CREATE UNIQUE INDEX idx_messages_seq ON messages(session_id, seq)');
-    batch.execute('CREATE INDEX idx_messages_session ON messages(session_id, seq DESC)');
+    // 同一毫秒可能插入多条（用户消息 + 工具结果），时间戳会乱序。
+    batch.execute('CREATE UNIQUE INDEX idx_msg_seq ON messages(conversation_id, seq)');
+    batch.execute('CREATE INDEX idx_msg_conv ON messages(conversation_id, seq DESC)');
 
+    // ── 记忆 ──
+    batch.execute('''
+      CREATE TABLE memories (
+        id                 TEXT PRIMARY KEY,
+        agent_id           TEXT NOT NULL,
+        conversation_id    TEXT,
+        type               TEXT NOT NULL DEFAULT 'fact',
+        content            TEXT NOT NULL,
+        embedding          BLOB,
+        source_message_ids TEXT,
+        created_at         INTEGER NOT NULL,
+        metadata           TEXT,
+        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+      )
+    ''');
+    // 注意：**不给 conversation_id 加外键**。删对话不该删记忆（见 docs/18 §2.2）。
+    batch.execute('CREATE INDEX idx_mem_agent ON memories(agent_id, created_at DESC)');
+    batch.execute('CREATE INDEX idx_mem_conv ON memories(conversation_id)');
+
+    // ── 服务商 ──
+    batch.execute('''
+      CREATE TABLE providers (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        protocol    TEXT NOT NULL DEFAULT 'openai',
+        base_url    TEXT NOT NULL,
+        api_key     TEXT NOT NULL DEFAULT '',
+        is_official INTEGER NOT NULL DEFAULT 0,
+        sort_order  INTEGER NOT NULL DEFAULT 100,
+        created_at  INTEGER NOT NULL
+      )
+    ''');
+
+    batch.execute('''
+      CREATE TABLE provider_models (
+        provider_id    TEXT NOT NULL,
+        id             TEXT NOT NULL,
+        display_name   TEXT,
+        context_window INTEGER,
+        discovered_at  INTEGER,
+        is_manual      INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (provider_id, id),
+        FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+      )
+    ''');
+
+    // ── 设置 ──
     batch.execute('''
       CREATE TABLE settings (
         key   TEXT PRIMARY KEY,
@@ -98,281 +164,193 @@ class AppDatabase {
     await batch.commit(noResult: true);
   }
 
-  Future<void> close() => db.close();
-}
+  // ═══════════════════════════ v1 → v2 ═══════════════════════════
 
-/// 会话与消息的仓储。
-///
-/// 所有 SQL 都在这里，界面层不直接碰 Database —— 换存储实现时只改这一个文件。
-class ChatRepository {
-  ChatRepository(this._db);
-
-  final AppDatabase _db;
-
-  Database get _d => _db.db;
-
-  // ─────────────────────────── 会话 ───────────────────────────
-
-  Future<List<ChatSession>> listSessions({bool includeArchived = false}) async {
-    final rows = await _d.query(
-      'sessions',
-      where: includeArchived ? null : 'archived = 0',
-      orderBy: 'COALESCE(last_message_at, updated_at) DESC',
-    );
-    return rows.map(_sessionFromRow).toList(growable: false);
-  }
-
-  Future<ChatSession?> getSession(String id) async {
-    final rows = await _d.query('sessions', where: 'id = ?', whereArgs: <Object?>[id], limit: 1);
-    return rows.isEmpty ? null : _sessionFromRow(rows.first);
-  }
-
-  Future<ChatSession> createSession({String? title, String? personaId, String? model}) async {
-    final now = DateTime.now();
-    final session = ChatSession(
-      id: newId('s'),
-      title: title ?? '新对话',
-      personaId: personaId,
-      model: model,
-      createdAt: now,
-      updatedAt: now,
-    );
-    await _d.insert('sessions', _sessionToRow(session));
-    return session;
-  }
-
-  Future<void> renameSession(String id, String title) async {
-    await _d.update(
-      'sessions',
-      <String, Object?>{'title': title, 'updated_at': DateTime.now().millisecondsSinceEpoch},
-      where: 'id = ?',
-      whereArgs: <Object?>[id],
-    );
-  }
-
-  Future<void> deleteSession(String id) async {
-    await _d.delete('sessions', where: 'id = ?', whereArgs: <Object?>[id]);
-  }
-
-  Future<void> setSessionModel(String id, String? model) async {
-    await _d.update(
-      'sessions',
-      <String, Object?>{'model': model, 'updated_at': DateTime.now().millisecondsSinceEpoch},
-      where: 'id = ?',
-      whereArgs: <Object?>[id],
-    );
-  }
-
-  /// 会话的最后一条消息时间 / 条数。
+  /// 把「会话为核心」迁移成「智能体为核心」。
   ///
-  /// 做成冗余字段（而不是每次 COUNT）是为了会话列表页 —— 那是高频查询。
-  Future<void> touchSession(String sessionId) async {
-    await _d.rawUpdate('''
-      UPDATE sessions SET
-        last_message_at = (SELECT MAX(created_at) FROM messages WHERE session_id = ?),
-        message_count   = (SELECT COUNT(*)      FROM messages WHERE session_id = ?),
-        updated_at      = ?
-      WHERE id = ?
-    ''', <Object?>[
-      sessionId,
-      sessionId,
-      DateTime.now().millisecondsSinceEpoch,
-      sessionId,
-    ]);
-  }
-
-  // ─────────────────────────── 消息 ───────────────────────────
-
-  /// 取某会话的消息（按 seq 升序）。
+  /// 1. 建 v2 的新表
+  /// 2. 造一个**空人设**的默认智能体，把旧会话全挂到它下面
+  /// 3. 旧消息表重建（改列名 + 加 rich_content / metadata）
+  /// 4. 删掉旧的 sessions 表
   ///
-  /// [limit] 从**最新往前**取，返回时仍是升序 —— 聊天页要先看到最近的内容。
-  Future<List<StoredChatMessage>> listMessages(String sessionId, {int limit = 200}) async {
-    final rows = await _d.query(
-      'messages',
-      where: 'session_id = ?',
-      whereArgs: <Object?>[sessionId],
-      orderBy: 'seq DESC',
-      limit: limit,
-    );
-    return rows.reversed.map(_messageFromRow).toList(growable: false);
-  }
+  /// **不用 `ALTER TABLE RENAME COLUMN`**：那需要 SQLite 3.25+，
+  /// 而 Android 8（API 26，我们的 minSdk）带的是 3.18/3.19。
+  /// 建新表 + 拷贝 + 删旧表在所有版本都能跑。
+  static Future<void> _migrateV1ToV2(Database db) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
 
-  Future<int> nextSeq(String sessionId) async {
-    final r = await _d.rawQuery(
-      'SELECT COALESCE(MAX(seq), 0) AS m FROM messages WHERE session_id = ?',
-      <Object?>[sessionId],
-    );
-    final maxSeq = (r.first['m'] as num?)?.toInt() ?? 0;
-    return maxSeq + 1;
-  }
+    await db.transaction((txn) async {
+      // ── 1. 新表 ──
+      await txn.execute('''
+        CREATE TABLE IF NOT EXISTS agents (
+          id            TEXT PRIMARY KEY,
+          name          TEXT NOT NULL,
+          avatar_path   TEXT,
+          persona       TEXT NOT NULL DEFAULT '{}',
+          model_config  TEXT NOT NULL DEFAULT '{}',
+          memory_config TEXT NOT NULL DEFAULT '{}',
+          created_at    INTEGER NOT NULL,
+          updated_at    INTEGER NOT NULL
+        )
+      ''');
+      await txn.execute('''
+        CREATE TABLE IF NOT EXISTS conversations (
+          id              TEXT PRIMARY KEY,
+          agent_id        TEXT NOT NULL,
+          title           TEXT NOT NULL,
+          status          TEXT NOT NULL DEFAULT 'active',
+          created_at      INTEGER NOT NULL,
+          updated_at      INTEGER NOT NULL,
+          last_message_at INTEGER,
+          message_count   INTEGER NOT NULL DEFAULT 0,
+          FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+        )
+      ''');
+      await txn.execute('''
+        CREATE TABLE IF NOT EXISTS memories (
+          id                 TEXT PRIMARY KEY,
+          agent_id           TEXT NOT NULL,
+          conversation_id    TEXT,
+          type               TEXT NOT NULL DEFAULT 'fact',
+          content            TEXT NOT NULL,
+          embedding          BLOB,
+          source_message_ids TEXT,
+          created_at         INTEGER NOT NULL,
+          metadata           TEXT,
+          FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+        )
+      ''');
+      await txn.execute('''
+        CREATE TABLE IF NOT EXISTS providers (
+          id          TEXT PRIMARY KEY,
+          name        TEXT NOT NULL,
+          protocol    TEXT NOT NULL DEFAULT 'openai',
+          base_url    TEXT NOT NULL,
+          api_key     TEXT NOT NULL DEFAULT '',
+          is_official INTEGER NOT NULL DEFAULT 0,
+          sort_order  INTEGER NOT NULL DEFAULT 100,
+          created_at  INTEGER NOT NULL
+        )
+      ''');
+      await txn.execute('''
+        CREATE TABLE IF NOT EXISTS provider_models (
+          provider_id    TEXT NOT NULL,
+          id             TEXT NOT NULL,
+          display_name   TEXT,
+          context_window INTEGER,
+          discovered_at  INTEGER,
+          is_manual      INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (provider_id, id),
+          FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+        )
+      ''');
 
-  Future<void> insertMessage(StoredChatMessage message) async {
-    await _d.insert('messages', _messageToRow(message));
-    await touchSession(message.sessionId);
-  }
-
-  /// 局部更新消息（流式追加、定稿、出错都走它）。
-  Future<void> updateMessage(
-    String id, {
-    String? content,
-    String? reasoning,
-    List<ToolCall>? toolCalls,
-    MessageStatus? status,
-    String? errorCode,
-    int? tokensPrompt,
-    int? tokensCompletion,
-  }) async {
-    final values = <String, Object?>{};
-    if (content != null) values['content'] = content;
-    if (reasoning != null) values['reasoning'] = reasoning;
-    if (toolCalls != null) {
-      values['tool_calls'] = jsonEncode(toolCalls.map((t) => t.toJson()).toList());
-    }
-    if (status != null) values['status'] = status.name;
-    if (errorCode != null) values['error_code'] = errorCode;
-    if (tokensPrompt != null) values['tokens_prompt'] = tokensPrompt;
-    if (tokensCompletion != null) values['tokens_completion'] = tokensCompletion;
-    if (values.isEmpty) return;
-
-    await _d.update('messages', values, where: 'id = ?', whereArgs: <Object?>[id]);
-  }
-
-  Future<void> deleteMessage(String id) async {
-    final rows = await _d.query('messages', columns: <String>['session_id'],
-        where: 'id = ?', whereArgs: <Object?>[id], limit: 1);
-    await _d.delete('messages', where: 'id = ?', whereArgs: <Object?>[id]);
-    if (rows.isNotEmpty) {
-      await touchSession(rows.first['session_id']! as String);
-    }
-  }
-
-  /// 清空某会话的消息。
-  Future<void> clearMessages(String sessionId) async {
-    await _d.delete('messages', where: 'session_id = ?', whereArgs: <Object?>[sessionId]);
-    await touchSession(sessionId);
-  }
-
-  /// 上一次启动时正在流式输出、但进程被杀掉的消息。
-  ///
-  /// 启动时要把它们标成 error —— 否则界面上会永远显示"正在输入"。
-  Future<int> failStaleStreamingMessages() async {
-    return _d.update(
-      'messages',
-      <String, Object?>{'status': MessageStatus.error.name, 'error_code': 'INTERRUPTED'},
-      where: 'status = ?',
-      whereArgs: <Object?>[MessageStatus.streaming.name],
-    );
-  }
-
-  // ─────────────────────────── 设置 ───────────────────────────
-
-  Future<String?> getSetting(String key) async {
-    final rows = await _d.query('settings', where: 'key = ?', whereArgs: <Object?>[key], limit: 1);
-    return rows.isEmpty ? null : rows.first['value'] as String?;
-  }
-
-  Future<void> setSetting(String key, String value) async {
-    await _d.insert(
-      'settings',
-      <String, Object?>{
-        'key': key,
-        'value': value,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  // ─────────────────────────── 行 ↔ 对象 ───────────────────────────
-
-  static ChatSession _sessionFromRow(Map<String, Object?> r) => ChatSession(
-        id: r['id']! as String,
-        title: r['title']! as String,
-        personaId: r['persona_id'] as String?,
-        model: r['model'] as String?,
-        createdAt: DateTime.fromMillisecondsSinceEpoch(r['created_at']! as int),
-        updatedAt: DateTime.fromMillisecondsSinceEpoch(r['updated_at']! as int),
-        lastMessageAt: r['last_message_at'] == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(r['last_message_at']! as int),
-        messageCount: (r['message_count'] as num?)?.toInt() ?? 0,
-        archived: (r['archived'] as num?)?.toInt() == 1,
+      // ── 2. 默认智能体（**空人设**）──
+      // 旧版本内置了「雪」这个人设；这里刻意不继承 —— 用户要求 AI 不要有默认人设。
+      await txn.insert(
+        'agents',
+        <String, Object?>{
+          'id': legacyAgentId,
+          'name': '默认智能体',
+          'avatar_path': null,
+          'persona': '{}',
+          'model_config': '{}',
+          'memory_config': '{}',
+          'created_at': now,
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
       );
 
-  static Map<String, Object?> _sessionToRow(ChatSession s) => <String, Object?>{
-        'id': s.id,
-        'title': s.title,
-        'persona_id': s.personaId,
-        'model': s.model,
-        'created_at': s.createdAt.millisecondsSinceEpoch,
-        'updated_at': s.updatedAt.millisecondsSinceEpoch,
-        'last_message_at': s.lastMessageAt?.millisecondsSinceEpoch,
-        'message_count': s.messageCount,
-        'archived': s.archived ? 1 : 0,
-      };
-
-  static StoredChatMessage _messageFromRow(Map<String, Object?> r) {
-    final rawTools = r['tool_calls'] as String?;
-    var toolCalls = const <ToolCall>[];
-    if (rawTools != null && rawTools.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(rawTools);
-        if (decoded is List) {
-          toolCalls = decoded
-              .whereType<Map<String, dynamic>>()
-              .map(ToolCall.fromOpenAi)
-              .toList(growable: false);
-        }
-      } catch (_) {
-        // 坏数据不该让整个会话打不开
+      // ── 3. 旧会话 → 对话 ──
+      final hasSessions = await _tableExists(txn, 'sessions');
+      if (hasSessions) {
+        await txn.execute('''
+          INSERT OR IGNORE INTO conversations
+            (id, agent_id, title, status, created_at, updated_at, last_message_at, message_count)
+          SELECT
+            id,
+            '$legacyAgentId',
+            title,
+            CASE WHEN archived = 1 THEN 'archived' ELSE 'active' END,
+            created_at,
+            updated_at,
+            last_message_at,
+            message_count
+          FROM sessions
+        ''');
       }
-    }
 
-    final rawMeta = r['meta'] as String?;
-    var meta = const <String, dynamic>{};
-    if (rawMeta != null && rawMeta.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(rawMeta);
-        if (decoded is Map<String, dynamic>) meta = decoded;
-      } catch (_) {}
-    }
+      // ── 4. 旧消息表 → 新消息表 ──
+      final hasMessages = await _tableExists(txn, 'messages');
+      final alreadyMigrated =
+          hasMessages && await _columnExists(txn, 'messages', 'conversation_id');
+      if (hasMessages && !alreadyMigrated) {
+        await txn.execute('''
+          CREATE TABLE messages_v2 (
+            id                TEXT PRIMARY KEY,
+            conversation_id   TEXT NOT NULL,
+            role              TEXT NOT NULL,
+            content           TEXT,
+            rich_content      TEXT,
+            tool_calls        TEXT,
+            tool_call_id      TEXT,
+            status            TEXT NOT NULL DEFAULT 'done',
+            error_code        TEXT,
+            seq               INTEGER NOT NULL,
+            created_at        INTEGER NOT NULL,
+            tokens_prompt     INTEGER,
+            tokens_completion INTEGER,
+            reasoning         TEXT,
+            metadata          TEXT,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+          )
+        ''');
+        // 旧列名是 session_id；旧列 meta → 新列 metadata；旧列 plugin_id 在 v2 里不用了
+        await txn.execute('''
+          INSERT INTO messages_v2
+            (id, conversation_id, role, content, rich_content, tool_calls, tool_call_id,
+             status, error_code, seq, created_at, tokens_prompt, tokens_completion, reasoning, metadata)
+          SELECT
+            id, session_id, role, content, NULL, tool_calls, tool_call_id,
+            status, error_code, seq, created_at, tokens_prompt, tokens_completion, reasoning, meta
+          FROM messages
+        ''');
+        await txn.execute('DROP TABLE messages');
+        await txn.execute('ALTER TABLE messages_v2 RENAME TO messages');
+      }
 
-    return StoredChatMessage(
-      id: r['id']! as String,
-      sessionId: r['session_id']! as String,
-      role: ChatRole.parse(r['role'] as String?),
-      content: r['content'] as String?,
-      toolCalls: toolCalls,
-      toolCallId: r['tool_call_id'] as String?,
-      pluginId: r['plugin_id'] as String?,
-      status: MessageStatus.parse(r['status'] as String?),
-      errorCode: r['error_code'] as String?,
-      seq: (r['seq']! as num).toInt(),
-      createdAt: DateTime.fromMillisecondsSinceEpoch(r['created_at']! as int),
-      tokensPrompt: (r['tokens_prompt'] as num?)?.toInt(),
-      tokensCompletion: (r['tokens_completion'] as num?)?.toInt(),
-      reasoning: r['reasoning'] as String?,
-      meta: meta,
-    );
+      // ── 5. 删旧表 ──
+      if (hasSessions) {
+        await txn.execute('DROP TABLE IF EXISTS sessions');
+      }
+
+      // ── 6. 索引 ──
+      await txn.execute('CREATE INDEX IF NOT EXISTS idx_agents_updated ON agents(updated_at DESC)');
+      await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_conv_agent ON conversations(agent_id, status, updated_at DESC)');
+      await txn.execute(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_seq ON messages(conversation_id, seq)');
+      await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id, seq DESC)');
+      await txn.execute(
+          'CREATE INDEX IF NOT EXISTS idx_mem_agent ON memories(agent_id, created_at DESC)');
+      await txn.execute('CREATE INDEX IF NOT EXISTS idx_mem_conv ON memories(conversation_id)');
+    });
   }
 
-  static Map<String, Object?> _messageToRow(StoredChatMessage m) => <String, Object?>{
-        'id': m.id,
-        'session_id': m.sessionId,
-        'role': m.role.name,
-        'content': m.content,
-        'tool_calls': m.toolCalls.isEmpty
-            ? null
-            : jsonEncode(m.toolCalls.map((t) => t.toJson()).toList()),
-        'tool_call_id': m.toolCallId,
-        'plugin_id': m.pluginId,
-        'status': m.status.name,
-        'error_code': m.errorCode,
-        'seq': m.seq,
-        'created_at': m.createdAt.millisecondsSinceEpoch,
-        'tokens_prompt': m.tokensPrompt,
-        'tokens_completion': m.tokensCompletion,
-        'reasoning': m.reasoning,
-        'meta': m.meta.isEmpty ? null : jsonEncode(m.meta),
-      };
+  static Future<bool> _tableExists(DatabaseExecutor db, String name) async {
+    final r = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+      <Object?>[name],
+    );
+    return r.isNotEmpty;
+  }
+
+  static Future<bool> _columnExists(DatabaseExecutor db, String table, String column) async {
+    final r = await db.rawQuery('PRAGMA table_info($table)');
+    return r.any((row) => row['name'] == column);
+  }
+
+  Future<void> close() => db.close();
 }
