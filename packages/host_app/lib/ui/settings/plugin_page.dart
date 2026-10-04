@@ -43,7 +43,15 @@ class PluginPage extends ConsumerWidget {
                   _PluginCard(
                     plugin: plugin,
                     host: host,
-                    onChanged: () => ref.invalidate(pluginHostProvider),
+                    // **不要 invalidate(pluginHostProvider)。**
+                    //
+                    // 那会把整个宿主销毁重建：WebView 全被杀掉，
+                    // 而 `_scan()` 会重新从清单读 `enabled` ——
+                    // 用户刚关掉的开关又变回开。这正是"关不掉"的原因。
+                    //
+                    // 宿主自己会在状态变更时 notifyListeners()，
+                    // 上面 watch 的 revision 会把界面刷新掉。
+                    onChanged: () {},
                   ),
 
               const SizedBox(height: 16),
@@ -86,7 +94,7 @@ class PluginPage extends ConsumerWidget {
         failed.add('$assetDir：$e');
       }
     }
-    ref.invalidate(pluginHostProvider);
+    // 同样不 invalidate —— installFromAssets 内部已经 _scan + notifyListeners
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(failed.isEmpty ? '装了 $ok 个插件' : '装了 $ok 个，${failed.length} 个失败'),
@@ -236,11 +244,34 @@ class _PluginCardState extends State<_PluginCard> {
                         'v${plugin.version} · ${plugin.id}',
                         style: TextStyle(fontSize: 11.5, color: t.textMuted),
                       ),
-                      if (plugin.runtime?.failureReason != null) ...<Widget>[
-                        const SizedBox(height: 4),
-                        Text(
-                          plugin.runtime!.failureReason!,
-                          style: TextStyle(fontSize: 11.5, color: t.danger),
+                      if (plugin.startupError != null) ...<Widget>[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: t.danger.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Icon(Icons.error_outline, size: 14, color: t.danger),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: SelectableText(
+                                  // 把失败原因完整显示出来，不做"友好化"处理 ——
+                                  // "启动失败"四个字对谁都没用，而这里面的
+                                  // 文件路径/异常名正是能定位问题的那一行
+                                  plugin.startupError!,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    height: 1.4,
+                                    color: t.danger,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ],
@@ -318,6 +349,17 @@ class _PluginCardState extends State<_PluginCard> {
 
           Row(
             children: <Widget>[
+              // 没起来时给一个明确的手动入口。
+              // 自动启动可能因为超时/时序失败，用户不该只能干看着。
+              if (!plugin.isReady && plugin.enabled && !plugin.manifest.isZeroCode)
+                TextButton.icon(
+                  onPressed: () async {
+                    await widget.host?.startNow(plugin.id);
+                    widget.onChanged();
+                  },
+                  icon: Icon(Icons.play_arrow_rounded, size: 16, color: t.primary),
+                  label: Text('启动', style: TextStyle(color: t.primary)),
+                ),
               TextButton.icon(
                 onPressed: () => setState(() => _expanded = !_expanded),
                 icon: Icon(

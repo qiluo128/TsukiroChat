@@ -75,6 +75,9 @@ final pluginHostProvider = FutureProvider<PluginHost>((ref) async {
     primitiveRegistry: primitives,
     slotRegistry: slots,
     audit: audit,
+    // 传仓储进去，启停状态才能持久化 ——
+    // 否则每次重启都从清单的 autoStart 重读，用户关掉的插件会自己回来
+    settings: await ref.watch(reposProvider.future).then((r) => r.settings),
   );
   ref.onDispose(host.dispose);
 

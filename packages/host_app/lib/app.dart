@@ -68,6 +68,14 @@ class _Shell extends ConsumerWidget {
     // 用户一退出聊天，插件 WebView 就被销毁了。
     final host = ref.watch(pluginHostValueProvider);
 
+    // **必须 watch 这个。**
+    //
+    // `initialize()` 返回时 `runtime` 还是 null（自动启动是后台跑的），
+    // 运行时是在之后才创建的。不 watch 这个计数器的话，外壳不会重建，
+    // `PluginHostView` 就一直是空的 —— WebView 永远不 attach，
+    // 于是 `attachRuntime` 永远不被调用，插件停在"未启动"。
+    ref.watch(pluginHostRevisionProvider);
+
     return Stack(
       children: <Widget>[
         child,

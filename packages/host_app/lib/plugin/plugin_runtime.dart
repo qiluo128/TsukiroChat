@@ -296,10 +296,26 @@ class WebViewPluginRuntime implements PluginRuntime {
   }
 
   void _onJsMessage(JavaScriptMessage message) {
-    // 不 await：JavaScriptChannel 的回调不该阻塞 WebView 线程
-    unawaited(_session.dispatch(message.message).catchError((Object e) {
+    unawaited(_handleJsMessage(message.message));
+  }
+
+  Future<void> _handleJsMessage(String raw) async {
+    try {
+      await _session.dispatch(raw);
+    } catch (e) {
       _log('error', '处理插件消息失败：$e');
-    }));
+      return;
+    }
+
+    // **握手完成后必须放行 start()。**
+    //
+    // 之前这里漏了这一步，而 `_readyCompleter` 在整个文件里**只被 await、
+    // 从来没有被 complete** —— 于是 `start()` 必然走满 15 秒超时，
+    // 插件无一例外显示"启动失败"。排查时最迷惑的地方在于：
+    // 日志里握手是成功的，但状态就是 failed。
+    if (_session.isReady && !_readyCompleter.isCompleted) {
+      _readyCompleter.complete();
+    }
   }
 
   // ─────────────────────────── 日志 ───────────────────────────
