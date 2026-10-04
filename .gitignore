@@ -61,3 +61,6 @@ packages/host_app/android/app/release/
 *.iml
 # ── Host App 里的真实凭据（模板 example 是提交的） ──
 packages/host_app/assets/dev-config.json
+# ── 演示插件（由 scripts/sync_demo_plugins.mjs 从 plugins/ 复制） ──
+# 单一事实来源是仓库根的 plugins/，这里那份是构建产物
+packages/host_app/assets/demo_plugins/

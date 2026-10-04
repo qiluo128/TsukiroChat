@@ -12,6 +12,7 @@ import '../data/models.dart';
 import '../data/repositories.dart';
 import '../services/utility_model.dart';
 import 'app_providers.dart';
+import 'plugin_providers.dart';
 
 /// 流式输出中的临时缓冲。
 ///
@@ -127,16 +128,22 @@ class ChatController {
         await _buildHistory(repos, conversationId, excludeIds: <String>{assistantId});
 
     try {
+      // 插件宿主可能还没初始化完（首次启动要装演示插件）。
+      // 拿不到时**如实报错**而不是假装工具不存在 ——
+      // 模型看到 "NO_RUNTIME" 会换一种方式回答，看到"没有这个工具"会以为用户没装。
+      final pluginHost = _ref.read(pluginHostValueProvider);
+
       final loop = AgentLoop(
         gatekeeper: _ref.read(gatekeeperProvider),
         tools: _ref.read(toolRegistryProvider),
         hooks: _ref.read(hookBusProvider),
         gateway: gateway,
-        // 插件运行时还没接 —— 有工具时会走到这里并**如实报错**，而不是假装成功
-        invokeTool: (pluginId, handler, args) async => ToolInvocationResult.failure(
-          'NO_RUNTIME',
-          '插件运行时尚未接入（$pluginId 的 $handler）',
-        ),
+        invokeTool: pluginHost != null
+            ? pluginHost.invokeTool
+            : (pluginId, handler, args) async => ToolInvocationResult.failure(
+                  'NO_RUNTIME',
+                  '插件系统还没就绪（$pluginId 的 $handler）',
+                ),
         // 人设可能为空 —— AgentLoop 在空串时**不注入 system 消息**，
         // 而不是替用户塞一句"你是一个助手"（见 docs/18 §6）
         persona: agent.persona.buildSystemPrompt(),

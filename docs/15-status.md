@@ -36,7 +36,10 @@
 | `MemoryProvider` 插件接口 | ⬜ 未开始 | 阶段 7。数据模型已就位 |
 | **本地持久化** | ✅ 已完成 | sqflite，表结构对齐 docs/10；重启不丢、可恢复被中断的流式消息 |
 | **真机可装** | ✅ APK 已构建 | `app-debug.apk` 149.8 MB |
-| WebView + Bridge 实际联通 | ⬜ 未开始 | 阶段 A3。**唯一还没被真实验证的一环** |
+| **WebView 插件运行时** | ✅ **已完成** | 系统 WebView + Bridge；CSP 沙箱；工具调用闭环打通 |
+| **插件安装与启停** | ✅ 已完成 | 从 assets 装演示插件；启停 / 卸载；工具注册进工具表 |
+| 插件管理 UI（列表 / 日志面板） | ⬜ 下一步 | 数据与状态都已就位，缺界面 |
+| 插槽渲染进界面 | ⬜ 下一步 | 协议已实现（`slot.render`），缺 UI 集成 |
 | Demo 端到端 21 项验收（真机） | ⬜ 未开始 | 阶段 A4 |
 | WebView + Bridge 实际联通 | ⬜ 未开始 | 阶段 A3 |
 | Demo 端到端 21 项验收（真机） | ⬜ 未开始 | 阶段 A4 |
@@ -128,6 +131,9 @@ $ dart test
 | 21 | **Android 9+ 拦截明文 HTTP** | **高（联网全废）** | 用户的 Base URL 常是 `http://`。默认策略下被系统拦掉。加 `network_security_config.xml`，并在设置页对 `http://` 明确警示 |
 | 22 | **标题清理单趟处理漏引号** | 中（功能可见） | `标题：「周末计划」。` 里那个 `」` 在句号**前面**，先剥引号再剥标点会漏掉 → 结果 `周末计划」`。改为反复剥到稳定。测试抓到的 |
 | 23 | **`userFacingConnectionError` 吞掉真实错误** | 中（排障困难） | 把 DNS 失败、证书问题、Key 错误全归成「网络连不上」，用户和开发者都无从下手。改为同时显示原始报文 + 一句「该怎么办」 |
+| 24 | **`BridgeSession.invoke` 没有投递通道** | **高（功能不通）** | 它只注册等待、不把消息发出去 —— 注释写着"宿主把这条消息投递给 WebView"，但调用方拿不到那个 envelope。`pendingInvokeIds` 那个 getter 就是这个缺口打的补丁。加 `BridgeSender` 后真正闭环 |
+| 25 | **`assets/demo_plugins/` 没进 APK** | **高（功能不通）** | **Flutter 的目录 asset 声明不递归** —— 写 `- assets/demo_plugins/` 只带那一层的文件，子目录全丢，而且**没有任何报错**。改为同步脚本自动生成每一层声明 |
+| 26 | **运行时按"每插槽一个 JS 文件"加载** | 中 | `UiDeclaration` 是**声明式** UI（button/toggle/section），根本没有 handler 字段。这个假设错了，声明式 UI 由宿主直接渲染，程序式渲染才走 `defineSlot` |
 
 **其中 1–3 都是 fail-open 方向的缺陷** —— 如果不写这几条测试，权限系统会静默失效而没人发现。这正好验证了 ADR-009「先做纯 Dart 内核 + 单测」的判断：这些问题在 Flutter + Android + WebView 混合环境里几乎不可能定位。
 

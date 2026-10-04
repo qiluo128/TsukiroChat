@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers/app_providers.dart';
+import 'providers/plugin_providers.dart';
 import 'providers/theme_provider.dart';
 import 'theme/app_theme.dart';
 import 'theme/design_tokens.dart';
+import 'plugin/plugin_host.dart';
 import 'ui/agent_list_page.dart';
 import 'ui/settings/settings_page.dart';
 
@@ -53,6 +55,29 @@ class TsukiroApp extends ConsumerWidget {
   }
 }
 
+/// App 外壳：主题装配 + 路由 + 插件宿主视图。
+class _Shell extends ConsumerWidget {
+  const _Shell({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 在**外壳**里 watch，而不是在某个页面里 ——
+    // 插件宿主必须随 App 一起活着。挂在聊天页上的话，
+    // 用户一退出聊天，插件 WebView 就被销毁了。
+    final host = ref.watch(pluginHostValueProvider);
+
+    return Stack(
+      children: <Widget>[
+        child,
+        // 1x1 的透明宿主：Android 平台视图要先 attach 才会跑 JS
+        if (host != null) PluginHostView(host: host),
+      ],
+    );
+  }
+}
+
 /// 启动闸门：等数据库与仓储就绪再进主界面。
 ///
 /// 特意做成全屏 loading + 明确的错误页，而不是"边加载边显示半成品" ——
@@ -63,6 +88,10 @@ class _Bootstrap extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repos = ref.watch(reposProvider);
+
+    // 插件宿主在后台初始化。**不阻塞启动** —— 插件起不来不该让 App 打不开，
+    // 而且首次启动还要装演示插件，那要读好几个 asset。
+    ref.watch(pluginHostProvider);
 
     return repos.when(
       loading: () => const Scaffold(
@@ -81,7 +110,7 @@ class _Bootstrap extends ConsumerWidget {
         error: e,
         onRetry: () => ref.invalidate(reposProvider),
       ),
-      data: (_) => const AgentListPage(),
+      data: (_) => const _Shell(child: AgentListPage()),
     );
   }
 }

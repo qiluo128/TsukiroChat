@@ -32,6 +32,12 @@ dependencies:
   intl: ^0.20.2
   cupertino_icons: ^1.0.8
 
+  # ── 插件运行时 ──
+  # 插件代码跑在系统 WebView 里，通过 Bridge 与宿主通信。
+  # 用系统 WebView 而不是内嵌 V8/QuickJS：省 3-5 MB 体积，
+  # 且系统 WebView 会跟着系统更新（安全补丁）。
+  webview_flutter: ^4.10.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -44,3 +50,15 @@ flutter:
     # 整目录：真实配置 dev-config.json 不进版本控制（见 dev/README.md），
     # 但构建时若存在会被打进 App —— 发版前务必确认没把它打进去。
     - assets/
+    # 插件运行时（JS 侧），创建插件 WebView 时注入
+    - assets/plugin_runtime/
+    # >>> demo_plugins (由 scripts/sync_demo_plugins.mjs 生成，勿手改)
+    - assets/demo_plugins/time-plugin/assets/
+    - assets/demo_plugins/time-plugin/handlers/
+    - assets/demo_plugins/time-plugin/
+    - assets/demo_plugins/translate-button/assets/
+    - assets/demo_plugins/translate-button/pages/
+    - assets/demo_plugins/translate-button/
+    - assets/demo_plugins/sakura-theme/assets/
+    - assets/demo_plugins/sakura-theme/
+    # <<< demo_plugins

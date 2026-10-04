@@ -33,6 +33,17 @@ enum SessionState {
 /// 一次会话的事件回调（宿主用来把日志接到调试面板）。
 typedef SessionObserver = void Function(String message, {Map<String, dynamic>? data});
 
+/// 宿主把消息**投递给 WebView** 的通道。
+///
+/// 传的是已经编码好的 JSON 文本，不是对象 —— 因为 WebView 的
+/// `evaluateJavascript` / `postMessage` 收的就是字符串，
+/// 在会话内部编码能避免每个宿主各写一遍（写漏一次就是一条消息静默丢失）。
+///
+/// 抛异常表示投递失败（WebView 已销毁等）。会话会把它记进审计，**不会**上抛 ——
+/// 投递失败不该让等待响应的 `invoke` 变成异常，那会让工具循环拿到一个
+/// 与"插件超时"不同的错误类型，多出一条分支。
+typedef BridgeSender = Future<void> Function(String rawJson);
+
 /// 一个插件的 Bridge 会话。
 class BridgeSession {
   BridgeSession({
@@ -42,6 +53,7 @@ class BridgeSession {
     required this.gatekeeper,
     this.hostVersion = '1.0.0',
     this.codec = const BridgeCodec(),
+    this.send,
     AuditSink? audit,
     this.maxPending = 64,
     this.observer,
@@ -58,6 +70,9 @@ class BridgeSession {
   final AuditSink audit;
   final int maxPending;
   final SessionObserver? observer;
+
+  /// 投递通道。为 null 时（测试里）由调用方自己发送 `handleRaw` 的返回值。
+  final BridgeSender? send;
 
   SessionState _state = SessionState.awaitingHello;
   String? _terminationReason;
@@ -85,6 +100,31 @@ class BridgeSession {
   List<String> get pendingInvokeIds => _awaiting.keys.toList(growable: false);
 
   // ─────────────────────────── 入口 ───────────────────────────
+
+  /// 处理一条来自 WebView 的原始文本消息，**并自动回发响应**。
+  ///
+  /// WebView 集成用这个；[handleRaw] 留给测试（那里需要拿到返回值做断言）。
+  Future<void> dispatch(String raw) async {
+    final reply = await handleRaw(raw);
+    if (reply != null) await _deliver(reply);
+  }
+
+  /// 把一条消息投递给 WebView。
+  ///
+  /// 投递失败只记审计，不上抛 —— 见 [BridgeSender] 的说明。
+  Future<void> _deliver(BridgeEnvelope envelope) async {
+    final sender = send;
+    if (sender == null) return;
+    try {
+      await sender(codec.encode(envelope));
+    } catch (e) {
+      _record('bridge.deliverFailed', 'error', <String, dynamic>{
+        'kind': envelope.kind.name,
+        'method': envelope.method,
+        'message': '$e',
+      });
+    }
+  }
 
   /// 处理一条来自 WebView 的原始文本消息。
   ///
@@ -172,17 +212,36 @@ class BridgeSession {
     peerHostApi = params['hostApi']?.toString();
     _state = SessionState.ready;
 
+    // 只发**有权限且已实现**的原语。
+    //
+    // 发全量的话，插件作者写 `tsukiro.fs.read(...)` 时编辑器里看着是有的，
+    // 直到运行时才被门禁拒掉 —— 而"我没声明 fs.read 权限"这个问题
+    // 本该在写代码时就暴露。
+    //
+    // 保留命名空间（`__host.*`）不发：它对插件是关闭的，
+    // 列出来只会引诱人去试。
+    final callable = registry.all
+        .where((s) => s.implemented && !s.name.startsWith('__'))
+        .where((s) => gatekeeper.checkPrimitive(pluginId, s.name).isAllowed)
+        .map((s) => s.name)
+        .toList(growable: false)
+      ..sort();
+
     _record('bridge.handshake', 'ok', <String, dynamic>{
       'peerVersion': peerVersion,
       'hostApi': peerHostApi,
+      'callable': callable.length,
     });
-    observer?.call('bridge 握手完成', data: <String, dynamic>{'pluginId': pluginId});
+    observer?.call('bridge 握手完成',
+        data: <String, dynamic>{'pluginId': pluginId, 'callable': callable.length});
 
     return BridgeEnvelope.event('bridge.ready', <String, dynamic>{
       'hostVersion': hostVersion,
       'bridgeProtocolVersion': bridgeProtocolVersion,
       // 已授权权限让插件能在启动时决定功能开关，不必等第一次调用失败
       'granted': gatekeeper.grantedOf(pluginId).toList(growable: false),
+      // 可调用的原语，插件运行时据此铺开 tsukiro.<domain>.<action>() 方法
+      'primitives': callable,
     });
   }
 
@@ -304,13 +363,23 @@ class BridgeSession {
     }
 
     final id = _outbound.nextId(prefix: 'i');
+    final envelope = BridgeEnvelope(
+      kind: BridgeKind.inv,
+      id: id,
+      method: method,
+      params: params,
+    );
+
     final completer = Completer<BridgeEnvelope>();
     _awaiting[id] = completer;
 
     observer?.call('→ inv $method', data: params);
 
-    // 宿主把这条消息投递给 WebView；这里只等回音。
-    // 用 unawaited 显式表明"这是刻意的后台超时兜底"，不是在漏 await。
+    // **先投递再等回音。** 少了这一步，`invoke` 会一直等到超时 ——
+    // 而且失败得很安静：调用方只会看到"插件没响应"，看不出是宿主根本没发出去。
+    await _deliver(envelope);
+
+    // 超时兜底，用 unawaited 显式表明"这是刻意的后台任务"，不是在漏 await。
     // 注意必须是 Future<void> —— 给 Future.delayed 指定非空类型参数时它要求
     // 传 computation，那正是我们要的这个空操作。
     unawaited(Future<void>.delayed(timeout).then((_) {
@@ -341,9 +410,14 @@ class BridgeSession {
   // ─────────────────────────── 宿主发事件 ───────────────────────────
 
   /// 宿主给插件发一条事件。
+  ///
+  /// 返回发出去的那条（供测试断言）；未就绪时返回 null 且**不投递**。
   BridgeEnvelope? event(String method, [Map<String, dynamic>? params]) {
     if (!isReady) return null;
-    return BridgeEnvelope.event(method, params);
+    final envelope = BridgeEnvelope.event(method, params);
+    // 事件是单向的，不等回音，但投递失败要留下痕迹
+    unawaited(_deliver(envelope));
+    return envelope;
   }
 
   /// 用户撤销/授予权限后通知插件，让它有机会优雅降级。
