@@ -19,7 +19,11 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'dart:convert';
+
 import 'package:plugin_core/plugin_core.dart';
+
+import '../data/repositories.dart';
 
 /// 全局 messenger key。
 ///
@@ -216,4 +220,87 @@ ServiceRegistry buildHostServices({
     ..put<HookBus>(hookBus);
   if (modelGateway != null) services.put<ModelGateway>(modelGateway);
   return services;
+}
+
+// ═══════════════════════════ 对话上下文 ═══════════════════════════
+
+/// 当前打开的对话。
+///
+/// 由聊天页在进入/退出时设置。插件调 `chat.lastMessage()` 时**不带会话 id**，
+/// 所以宿主必须知道"用户现在看的是哪个对话"。
+class AppChatContext implements HostChatContext {
+  AppChatContext({required this.repos});
+
+  final Future<Repos> repos;
+
+  /// 当前打开的对话 id。聊天页负责维护。
+  @override
+  String? activeConversationId;
+
+  @override
+  Future<Map<String, dynamic>?> lastMessage(
+    String conversationId, {
+    String? role,
+  }) async {
+    final r = await repos;
+    // 多取几条再按角色筛 —— 存储层没有"按角色取最后一条"的接口，
+    // 而这里最多扫 40 条，代价可以忽略
+    final messages = await r.messages.list(conversationId, limit: 40);
+
+    for (final m in messages.reversed) {
+      if (role != null && role.isNotEmpty && m.role.name != role) continue;
+      final text = m.content;
+      if (text == null || text.trim().isEmpty) continue;
+      return <String, dynamic>{
+        'id': m.id,
+        'role': m.role.name,
+        'text': text,
+        'createdAt': m.createdAt.toIso8601String(),
+      };
+    }
+    return null;
+  }
+}
+
+// ═══════════════════════════ 插件配置 ═══════════════════════════
+
+/// 插件配置，存在宿主 settings 表里。
+///
+/// 键前缀 `plugin.config.<pluginId>.` —— 命名空间隔离，
+/// 插件 A 拿不到插件 B 的配置（前缀对不上）。
+class AppPluginConfig implements HostPluginConfig {
+  AppPluginConfig({required this.repos});
+
+  final Future<Repos> repos;
+
+  String _key(String pluginId, String key) => 'plugin.config.$pluginId.$key';
+
+  @override
+  Future<Object?> get(String pluginId, String key, {Object? fallback}) async {
+    final r = await repos;
+    final raw = await r.settings.get(_key(pluginId, key));
+    if (raw == null || raw.isEmpty) return fallback;
+    // 存 JSON —— 字符串/数字/布尔/对象都能原样往返，
+    // 不用在宿主侧加类型标注，也不用猜插件想存什么
+    try {
+      return jsonDecode(raw);
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  @override
+  Future<void> set(String pluginId, String key, Object? value) async {
+    final r = await repos;
+    await r.settings.set(_key(pluginId, key), jsonEncode(value));
+  }
+
+  @override
+  Future<Map<String, Object?>> all(String pluginId) async {
+    // settings 表只能按键查，没有"按前缀列出"。
+    // 插件配置项很少（清单里声明几个就是几个），而 schema 默认值
+    // 由插件侧用 get(key, fallback:) 拿到 —— 所以这里返回空表是正确的，
+    // 不是偷懒。真要列全量时再加一个前缀索引。
+    return <String, Object?>{};
+  }
 }

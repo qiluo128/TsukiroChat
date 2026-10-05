@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/models.dart';
 import '../providers/app_providers.dart';
 import '../providers/chat_controller.dart';
+import '../providers/plugin_providers.dart';
 import '../theme/app_theme.dart';
 import 'message_bubble.dart';
 import 'plugin_slot.dart';
@@ -29,7 +30,23 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   bool _showReasoning = false;
 
   @override
+  void initState() {
+    super.initState();
+    // 告诉宿主"用户现在在看这个对话" ——
+    // 插件调 chat.lastMessage() 时不带会话 id，靠的就是这里设的值。
+    // 放在 postFrame 里：provider 要等 widget 树就绪才安全。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(chatContextProvider).activeConversationId = widget.conversationId;
+    });
+  }
+
+  @override
   void dispose() {
+    // **退出时要清掉**，否则插件会拿到一个已经关掉的对话：
+    // 它的 chat.lastMessage() 会读到旧对话的内容，
+    // 而用户以为自己已经不在那个对话里了。
+    ref.read(chatContextProvider).activeConversationId = null;
     _scroll.dispose();
     _input.dispose();
     _inputFocus.dispose();

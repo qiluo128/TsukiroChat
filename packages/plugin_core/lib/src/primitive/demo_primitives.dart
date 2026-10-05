@@ -21,6 +21,12 @@ import 'primitive_spec.dart';
 /// 把 handler 塞进 `standardPrimitiveCatalog(implemented: demoPrimitiveHandlers)` 即可。
 const Map<String, PrimitiveHandler> demoPrimitiveHandlers = <String, PrimitiveHandler>{
   'sys.time': handleSysTime,
+  'chat.lastMessage': handleChatLastMessage,
+  'chat.info': handleChatInfo,
+  'config.get': handleConfigGet,
+  'config.set': handleConfigSet,
+  'config.all': handleConfigAll,
+  'ui.dialog': handleUiDialog,
   'ui.toast': handleUiToast,
   'fs.read': handleFsRead,
   'model.chat': handleModelChat,
@@ -260,4 +266,116 @@ Future<Object?> handleHostCapabilities(PrimitiveCall call) async {
     'hookPhases': HookPhase.values.map((p) => p.name).toList(growable: false),
     'hooksRegistered': bus?.length ?? 0,
   };
+}
+
+// ─────────────────────────── chat.* ───────────────────────────
+
+/// 取当前对话里最近一条消息。
+///
+/// **必须通过 [HostChatContext] 拿"当前对话"**，而不是让插件传会话 id ——
+/// 插件根本不知道宿主界面上开着哪个对话。
+Future<Object?> handleChatLastMessage(PrimitiveCall call) async {
+  final ctx = call.require<HostChatContext>();
+
+  final conversationId = ctx.activeConversationId;
+  if (conversationId == null || conversationId.isEmpty) {
+    // 明确区分"没在对话里"和"对话里没消息" ——
+    // 前者用户可以切回去解决，后者只能换个说法
+    throw TsukiroException(
+      TsukiroErrorCode.invalidArgs,
+      '用户当前不在任何对话里，取不到消息',
+    );
+  }
+
+  final role = call.args['role'] as String?;
+  if (role != null && role.isNotEmpty) {
+    const allowed = <String>{'user', 'assistant', 'system'};
+    if (!allowed.contains(role)) {
+      throw TsukiroException(
+        TsukiroErrorCode.invalidArgs,
+        'role 只能是 user / assistant / system，收到 "$role"',
+      );
+    }
+  }
+
+  final msg = await ctx.lastMessage(
+    conversationId,
+    role: (role == null || role.isEmpty) ? null : role,
+  );
+  // 返回 null 而不是抛异常：**"没有消息"是正常结果**，
+  // 插件会据此提示用户"还没有可翻译的消息"
+  return msg;
+}
+
+/// 当前对话的元信息。
+Future<Object?> handleChatInfo(PrimitiveCall call) async {
+  final ctx = call.require<HostChatContext>();
+  final id = ctx.activeConversationId;
+  return <String, dynamic>{
+    'active': id != null,
+    'conversationId': id,
+  };
+}
+
+// ─────────────────────────── config.* ───────────────────────────
+
+/// 读插件自己的配置项。
+Future<Object?> handleConfigGet(PrimitiveCall call) async {
+  final config = call.require<HostPluginConfig>();
+  final key = call.args['key'] as String?;
+  if (key == null || key.isEmpty) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 key 参数');
+  }
+  final value = await config.get(call.pluginId, key, fallback: call.args['default']);
+  return <String, dynamic>{'key': key, 'value': value};
+}
+
+/// 写插件自己的配置项。
+Future<Object?> handleConfigSet(PrimitiveCall call) async {
+  final config = call.require<HostPluginConfig>();
+  final key = call.args['key'] as String?;
+  if (key == null || key.isEmpty) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 key 参数');
+  }
+  if (!call.args.containsKey('value')) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 value 参数');
+  }
+  await config.set(call.pluginId, key, call.args['value']);
+  return <String, dynamic>{'ok': true, 'key': key};
+}
+
+/// 读插件全部配置。
+Future<Object?> handleConfigAll(PrimitiveCall call) async {
+  final config = call.require<HostPluginConfig>();
+  return config.all(call.pluginId);
+}
+
+// ─────────────────────────── ui.dialog ───────────────────────────
+
+/// 弹对话框，返回被点按钮的 id。
+Future<Object?> handleUiDialog(PrimitiveCall call) async {
+  final ui = call.require<HostUi>();
+  final title = call.args['title'] as String?;
+  if (title == null || title.isEmpty) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 title 参数');
+  }
+
+  final rawButtons = call.args['buttons'];
+  final buttons = <UiButton>[];
+  if (rawButtons is List) {
+    for (final b in rawButtons) {
+      if (b is! Map) continue;
+      final id = b['id']?.toString();
+      final label = b['label']?.toString();
+      if (id == null || label == null) continue;
+      buttons.add(UiButton(id, label, style: b['style']?.toString() ?? 'default'));
+    }
+  }
+
+  final clicked = await ui.dialog(
+    title: title,
+    content: call.args['content'] as String?,
+    buttons: buttons,
+  );
+  return <String, dynamic>{'clicked': clicked};
 }

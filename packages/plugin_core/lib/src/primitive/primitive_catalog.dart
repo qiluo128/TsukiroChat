@@ -142,6 +142,34 @@ final List<_E> _entries = <_E>[
         'required': <String>[],
         'additionalProperties': false,
       }),
+  // ───────────────────── 对话上下文 ─────────────────────
+  //
+  // 注意这些原语**不带会话 id** —— 语义是"用户现在看的那个对话"。
+  // 见 HostChatContext 的说明。
+  _E('chat.lastMessage', '取当前对话里最近一条消息',
+      permission: 'chat.read',
+      schema: <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{
+          'role': <String, dynamic>{
+            'type': 'string',
+            'enum': <String>['user', 'assistant', 'system'],
+            'description': '只取该角色的最近一条；留空表示不限角色',
+          },
+        },
+        'required': <String>[],
+        'additionalProperties': false,
+      }),
+  _E('chat.info', '取当前对话的元信息（标题、条数）', permission: 'chat.read'),
+
+  // ───────────────────── 插件配置 ─────────────────────
+  //
+  // **无需权限**：读写的都是插件自己在清单里声明的配置段，
+  // 不含任何用户数据，不该让用户为它做决定。
+  _E('config.get', '读取插件自己的配置项'),
+  _E('config.set', '写入插件自己的配置项'),
+  _E('config.all', '读取插件自己的全部配置'),
+
   _E('sys.battery', '电池状态', permission: 'sys.info'),
   _E('sys.network', '网络状态', permission: 'sys.info'),
   _E('sys.device', '设备信息', permission: 'sys.info'),

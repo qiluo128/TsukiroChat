@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
 
 import '../plugin/host_services_impl.dart';
+import '../services/utility_model.dart';
 import '../plugin/plugin_host.dart';
 import 'app_providers.dart';
 
@@ -33,6 +34,14 @@ const List<String> demoTemplatePlugins = <String>[
 /// fs.read / model.chat / primitive.list / hook.phases / host.capabilities）。
 /// 其余 105 个已注册未实现 —— 插件调它们会拿到 `NOT_IMPLEMENTED`，
 /// 这是**如实报错**，不是假装成功。
+/// 当前打开的对话（插件 `chat.*` 用）。
+///
+/// 聊天页进入/退出时改它。**必须是单例** —— 每次 read 都新建的话，
+/// 聊天页设的是 A、原语读的是 B，插件永远拿不到当前对话。
+final chatContextProvider = Provider<AppChatContext>(
+  (ref) => AppChatContext(repos: ref.watch(reposProvider.future)),
+);
+
 final primitiveRegistryProvider = Provider<PrimitiveRegistry>((ref) {
   // 先建一个**可变的服务表**，再把它交给注册表 ——
   // `primitive.list` / `host.capabilities` 要自省 PrimitiveRegistry 本身，
@@ -55,7 +64,19 @@ final primitiveRegistryProvider = Provider<PrimitiveRegistry>((ref) {
     ..put<HostClock>(const AppHostClock())
     ..put<HostUi>(const AppHostUi())
     ..put<PrimitiveRegistry>(registry)
-    ..put<HookBus>(ref.watch(hookBusProvider));
+    ..put<HookBus>(ref.watch(hookBusProvider))
+    ..put<HostChatContext>(ref.watch(chatContextProvider))
+    ..put<HostPluginConfig>(AppPluginConfig(repos: ref.watch(reposProvider.future)));
+
+  // model.chat 用的模型网关。
+  //
+  // 用**工具模型**而不是当前智能体的模型：插件调 model.chat 做的是
+  // 翻译、摘要这类副任务，而工具模型正是为这类任务准备的（便宜、够快）。
+  // 顺带也避免了"插件偷偷用用户主聊天那个贵模型"的问题。
+  final utilityGateway = ref.watch(utilityGatewayProvider);
+  if (utilityGateway != null) {
+    services.put<ModelGateway>(utilityGateway);
+  }
 
   return registry;
 });

@@ -284,3 +284,48 @@ abstract class HostScheduler {
   /// 插件停用 / 卸载时清除其全部任务。
   Future<int> clearPlugin(String pluginId);
 }
+
+// ─────────────────────────── 对话上下文 ───────────────────────────
+
+/// 当前对话上下文。`chat.*` 用。
+///
+/// ## 为什么需要"当前对话"这个概念
+///
+/// 插件调 `chat.lastMessage()` 时**不带会话 id** —— 它的语义是
+/// "用户现在看的这个对话里最近一条消息"，就像用户说"翻译这条"。
+///
+/// 要求插件自己传会话 id 会很难用：插件根本不知道宿主界面上开着哪个对话，
+/// 而且它在按钮被点的那一刻也拿不到。所以由宿主维护"当前对话"。
+abstract class HostChatContext {
+  /// 用户当前打开的对话 id；不在对话页时为 null。
+  ///
+  /// 插件据此可以给出"你现在没在对话里"这种准确提示，
+  /// 而不是笼统的"取不到消息"。
+  String? get activeConversationId;
+
+  /// 取某个对话里最近一条消息（可按角色过滤）。
+  ///
+  /// 返回 `{id, role, text, createdAt}`；没有消息时返回 null。
+  Future<Map<String, dynamic>?> lastMessage(
+    String conversationId, {
+    String? role,
+  });
+}
+
+// ─────────────────────────── 插件配置 ───────────────────────────
+
+/// 插件自己的配置。`config.*` 用。
+///
+/// 配置项在清单的 `config.schema` 里声明（带默认值），
+/// 用户改过的值存在宿主侧。**插件只看到键值，看不到存储细节** ——
+/// 这样宿主换存储实现（内存 → SQLite → 同步服务）不影响插件。
+abstract class HostPluginConfig {
+  /// 读一个配置项。没设置过时返回 [fallback]（通常是 schema 里的默认值）。
+  Future<Object?> get(String pluginId, String key, {Object? fallback});
+
+  /// 写一个配置项。
+  Future<void> set(String pluginId, String key, Object? value);
+
+  /// 取该插件的全部配置（含 schema 默认值）。
+  Future<Map<String, Object?>> all(String pluginId);
+}

@@ -17,6 +17,7 @@ import 'package:path/path.dart' as p;
 import 'package:plugin_core/plugin_core.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:tsukiro_chat/data/database.dart';
+import 'package:tsukiro_chat/data/models.dart';
 import 'package:tsukiro_chat/data/repositories.dart';
 import 'package:tsukiro_chat/plugin/host_services_impl.dart';
 import 'package:tsukiro_chat/plugin/plugin_host.dart';
@@ -50,6 +51,10 @@ void main() {
   late Repos repos;
 
   setUpAll(() {
+    // `ui.dialog` 会碰 Flutter binding（要拿 ScaffoldMessenger）。
+    // 不初始化的话它会抛 "Binding has not yet been initialized" ——
+    // 那是测试环境问题，不是原语没实现。
+    TestWidgetsFlutterBinding.ensureInitialized();
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   });
@@ -265,6 +270,143 @@ void main() {
       expect(clock.nowIn('Mars/Olympus'), isNull);
       // 本地时区名不能是空
       expect(clock.timezoneName, isNotEmpty);
+    });
+  });
+
+  group('⑥ 翻译按钮链路（用户反馈：实现失败）', () {
+    /// 复刻生产装配。
+    Future<(PrimitiveRegistry, AppChatContext, AppPluginConfig)> buildHost() async {
+      final services = ServiceRegistry();
+      final registry = PrimitiveRegistry(
+        gatekeeper: Gatekeeper(),
+        services: services,
+      );
+      registry.registerAll(
+        standardPrimitiveCatalog(implemented: demoPrimitiveHandlers),
+      );
+
+      final chatCtx = AppChatContext(repos: Future<Repos>.value(repos));
+      final pluginCfg = AppPluginConfig(repos: Future<Repos>.value(repos));
+      services
+        ..put<HostClock>(const AppHostClock())
+        ..put<HostUi>(const AppHostUi())
+        ..put<HostChatContext>(chatCtx)
+        ..put<HostPluginConfig>(pluginCfg)
+        ..put<PrimitiveRegistry>(registry);
+
+      const id = 'dev.tsukiro.translate';
+      registry.gatekeeper.registerPlugin(
+        id,
+        <String>['chat.read', 'model.chat', 'ui'],
+      );
+      registry.gatekeeper.grantAll(id, <String>['chat.read', 'model.chat', 'ui']);
+      return (registry, chatCtx, pluginCfg);
+    }
+
+    test('chat.lastMessage 能取到当前对话的最近一条（以前目录里都没这个原语）', () async {
+      final (registry, chatCtx, _) = await buildHost();
+
+      // 造一个对话 + 两条消息
+      final agent = await repos.agents.create(name: 'A');
+      final conv = await repos.conversations.create(agent.id);
+      await repos.messages.prepareTurn(conv.id, userText: '你好');
+      await repos.messages.update(
+        (await repos.messages.list(conv.id)).last.id,
+        content: '你好，有什么事？',
+        status: MessageStatus.done,
+      );
+
+      // 用户"进入"这个对话
+      chatCtx.activeConversationId = conv.id;
+
+      final r = await registry.invoke(
+        'dev.tsukiro.translate',
+        'chat.lastMessage',
+        <String, dynamic>{'role': 'assistant'},
+      );
+      expect(r, isNotNull);
+      expect((r! as Map)['text'], '你好，有什么事？');
+
+      // 只按 user 过滤
+      final userOnly = await registry.invoke(
+        'dev.tsukiro.translate',
+        'chat.lastMessage',
+        <String, dynamic>{'role': 'user'},
+      );
+      expect((userOnly! as Map)['text'], '你好');
+    });
+
+    test('不在对话里时给出可操作的错误，而不是笼统的失败', () async {
+      final (registry, chatCtx, _) = await buildHost();
+      chatCtx.activeConversationId = null;
+
+      await expectLater(
+        () => registry.invoke(
+          'dev.tsukiro.translate',
+          'chat.lastMessage',
+          <String, dynamic>{},
+        ),
+        throwsA(predicate((e) => '$e'.contains('不在任何对话里'))),
+      );
+    });
+
+    test('config.get / config.set 能往返，且各插件互不可见', () async {
+      final (registry, _, _) = await buildHost();
+
+      const a = 'dev.tsukiro.translate';
+      const b = 'dev.other.plugin';
+      for (final id in <String>[a, b]) {
+        registry.gatekeeper.registerPlugin(id, const <String>[]);
+      }
+
+      await registry.invoke(a, 'config.set', <String, dynamic>{
+        'key': 'target',
+        'value': '英文',
+      });
+
+      final got = await registry.invoke(a, 'config.get', <String, dynamic>{
+        'key': 'target',
+      });
+      expect((got! as Map)['value'], '英文');
+
+      // 插件 B 读同一个键名，应该是它自己的（未设置）
+      final other = await registry.invoke(b, 'config.get', <String, dynamic>{
+        'key': 'target',
+        'default': '中文',
+      });
+      expect((other! as Map)['value'], '中文',
+          reason: '插件之间必须隔离 —— B 读到了 A 的配置就是命名空间没做对');
+
+      // 没设置过时用 fallback
+      final missing = await registry.invoke(a, 'config.get', <String, dynamic>{
+        'key': 'nope',
+        'default': 42,
+      });
+      expect((missing! as Map)['value'], 42);
+    });
+
+    test('model.chat 缺 ModelGateway 时报错可诊断', () async {
+      final (registry, _, _) = await buildHost();
+      // 故意不注册 ModelGateway —— 生产里如果忘了注入就是这个表现
+      await expectLater(
+        () => registry.invoke('dev.tsukiro.translate', 'model.chat', <String, dynamic>{
+          'messages': <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'hi'},
+          ],
+        }),
+        throwsA(predicate((e) => '$e'.contains('ModelGateway'))),
+      );
+    });
+
+    test('ui.dialog 已能执行（以前是"已注册未实现"）', () async {
+      final (registry, _, _) = await buildHost();
+      // 无头测试里没有真实的 messenger，AppHostUi.dialog 会返回 null；
+      // 这里只验证**原语本身不再报"未实现"**
+      final r = await registry.invoke('dev.tsukiro.translate', 'ui.dialog', <String, dynamic>{
+        'title': '翻译完成',
+        'content': 'Hello',
+      });
+      expect(r, isNotNull, reason: 'ui.dialog 以前抛"原语未实现"');
     });
   });
 
