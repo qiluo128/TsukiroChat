@@ -12,6 +12,7 @@ library;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
 
+import '../plugin/host_services_impl.dart';
 import '../plugin/plugin_host.dart';
 import 'app_providers.dart';
 
@@ -33,11 +34,29 @@ const List<String> demoTemplatePlugins = <String>[
 /// 其余 105 个已注册未实现 —— 插件调它们会拿到 `NOT_IMPLEMENTED`，
 /// 这是**如实报错**，不是假装成功。
 final primitiveRegistryProvider = Provider<PrimitiveRegistry>((ref) {
-  // 原语注册表要持门禁 —— 每个原语调用都要过它。
-  // 用 ref.watch 而不是每次 new：**门禁必须是同一实例**，
-  // 否则插件注册在这一个、原语查的是另一个，调用会被"未注册"拒掉。
-  final registry = PrimitiveRegistry(gatekeeper: ref.watch(gatekeeperProvider));
+  // 先建一个**可变的服务表**，再把它交给注册表 ——
+  // `primitive.list` / `host.capabilities` 要自省 PrimitiveRegistry 本身，
+  // 所以必须先有注册表才能把它塞进服务表。共享一个可变表绕开这个循环。
+  final services = ServiceRegistry();
+
+  final registry = PrimitiveRegistry(
+    gatekeeper: ref.watch(gatekeeperProvider),
+    services: services,
+  );
   registry.registerAll(standardPrimitiveCatalog(implemented: demoPrimitiveHandlers));
+
+  // **这一步以前完全缺失。**
+  //
+  // 内核把宿主能力设计成「按类型注入的服务」，但宿主一个都没注入，
+  // 于是所有需要宿主服务的原语（sys.time / ui.toast / fs.read / model.chat）
+  // 必然抛「宿主未注入服务 X」。
+  // 表现是：插件跑起来了、工具也调到了，一执行就报错。
+  services
+    ..put<HostClock>(const AppHostClock())
+    ..put<HostUi>(const AppHostUi())
+    ..put<PrimitiveRegistry>(registry)
+    ..put<HookBus>(ref.watch(hookBusProvider));
+
   return registry;
 });
 

@@ -10,6 +10,7 @@ import 'providers/plugin_providers.dart';
 import 'providers/theme_provider.dart';
 import 'theme/app_theme.dart';
 import 'theme/design_tokens.dart';
+import 'plugin/host_services_impl.dart';
 import 'plugin/plugin_host.dart';
 import 'ui/agent_list_page.dart';
 import 'ui/settings/settings_page.dart';
@@ -64,6 +65,9 @@ class TsukiroApp extends ConsumerWidget {
     return MaterialApp(
       title: 'Tsukiro Chat',
       debugShowCheckedModeBanner: false,
+      // 插件要能弹提示，而它是在 widget 树之外被调用的（WebView 回调），
+      // 拿不到 BuildContext —— 只能靠这个全局入口
+      scaffoldMessengerKey: appMessengerKey,
       // 两套都给 Flutter，由 themeMode 决定用哪套 ——
       // `system` 时 Flutter 自己监听平台切换，比我们自己读亮度再重建可靠
       theme: AppTheme.build(light),

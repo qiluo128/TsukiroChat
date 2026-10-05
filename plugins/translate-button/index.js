@@ -12,6 +12,17 @@ tsukiro.event.on('ui.click', async (e) => {
   await handleTranslate();
 });
 
+/**
+ * 清单里声明的是 `"onClick": { "event": "translate.clicked" }`，
+ * 而上面只监听了兜底的 `ui.click` —— 于是点按钮**没有任何反应**。
+ *
+ * 声明与实现必须一致。这里补上清单声明的事件名：
+ * 清单是插件的对外接口，实现应该去满足它，而不是反过来。
+ */
+tsukiro.event.on('translate.clicked', async () => {
+  await handleTranslate();
+});
+
 async function handleTranslate() {
   // 取上一条助手消息作为待翻译内容
   const last = await tsukiro.chat.lastMessage({ role: 'assistant' });

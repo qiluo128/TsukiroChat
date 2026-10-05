@@ -11,13 +11,16 @@ library;
 
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:plugin_core/plugin_core.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:tsukiro_chat/data/database.dart';
 import 'package:tsukiro_chat/data/repositories.dart';
+import 'package:tsukiro_chat/plugin/host_services_impl.dart';
 import 'package:tsukiro_chat/plugin/plugin_host.dart';
+import 'package:tsukiro_chat/theme/design_tokens.dart';
 
 Directory repoRoot() {
   var dir = Directory.current;
@@ -187,6 +190,121 @@ void main() {
       expect(themes, isNotEmpty,
           reason: '宿主没有从插件收集主题声明，appTokensProvider 只会返回默认值');
       expect(themes.first.tokens, isNotEmpty);
+    });
+
+    test('主题令牌真的能改变 AppTokens 的主色（最后一段路）', () async {
+      installReal('sakura-theme');
+      final host = makeHost();
+      await host.debugScanDirectory(pluginsRoot.path);
+
+      final base = AppTokens.defaults();
+      // 宿主默认是青色 #00DEFF
+      expect(base.primary, const Color(0xFF00DEFF));
+
+      final themed = AppTokens.fromTheme(host.availableThemes().first, base: base);
+
+      // sakura 声明 color.primary = #FF6B9D
+      expect(themed.primary, const Color(0xFFFF6B9D),
+          reason: '主题声明没能覆盖主色 —— 用户看到的「还是蓝的」就是这个');
+      expect(themed.primary, isNot(base.primary));
+    });
+  });
+
+  group('④ 宿主服务注入（用户反馈：宿主未注入时钟服务）', () {
+    test('sys.time 能真正执行，不再抛「宿主未注入服务」', () async {
+      // 复刻生产装配：注册表 + 服务表
+      final services = ServiceRegistry();
+      final registry = PrimitiveRegistry(
+        gatekeeper: Gatekeeper(),
+        services: services,
+      );
+      registry.registerAll(standardPrimitiveCatalog(implemented: demoPrimitiveHandlers));
+      services
+        ..put<HostClock>(const AppHostClock())
+        ..put<HostUi>(const AppHostUi());
+
+      const pluginId = 'dev.test.clock';
+      registry.gatekeeper.registerPlugin(pluginId, <String>['sys.time']);
+      registry.gatekeeper.grantAll(pluginId, <String>['sys.time']);
+
+      final result = await registry.invoke(pluginId, 'sys.time', <String, dynamic>{});
+      final map = result! as Map<String, dynamic>;
+
+      // 以前这里会抛 StateError('宿主未注入服务 HostClock…')
+      expect(map['iso'], isNotNull, reason: 'sys.time 应该返回时间');
+      expect(map['human'], isNotNull);
+      expect(map['tz'], isNotNull);
+      expect(DateTime.tryParse(map['iso'] as String), isNotNull);
+    });
+
+    test('服务表缺 HostClock 时的报错是可诊断的', () async {
+      final registry = PrimitiveRegistry(gatekeeper: Gatekeeper());
+      registry.registerAll(standardPrimitiveCatalog(implemented: demoPrimitiveHandlers));
+      const pluginId = 'dev.test.clock';
+      registry.gatekeeper.registerPlugin(pluginId, <String>['sys.time']);
+      registry.gatekeeper.grantAll(pluginId, <String>['sys.time']);
+
+      // 这就是用户看到的那条错误。它**本身没问题** ——
+      // 问题在于宿主从来没注入过。
+      await expectLater(
+        () => registry.invoke(pluginId, 'sys.time', <String, dynamic>{}),
+        throwsA(anything),
+      );
+    });
+
+    test('HostClock 认常见 IANA 时区名', () {
+      const clock = AppHostClock();
+      final shanghai = clock.nowIn('Asia/Shanghai');
+      final tokyo = clock.nowIn('Asia/Tokyo');
+      expect(shanghai, isNotNull);
+      expect(tokyo, isNotNull);
+      // 东京比上海早 1 小时
+      expect(tokyo!.difference(shanghai!).inMinutes, 60);
+
+      // 不认识的时区返回 null（原语会给出友好的错误，而不是瞎猜一个时间）
+      expect(clock.nowIn('Mars/Olympus'), isNull);
+      // 本地时区名不能是空
+      expect(clock.timezoneName, isNotEmpty);
+    });
+  });
+
+  group('⑤ 控件事件名与插件实现一致（用户反馈：点了没反应）', () {
+    test('translate-button 声明的事件名在它的 index.js 里有监听', () {
+      final src = Directory(p.join(repoRoot().path, 'plugins', 'translate-button'));
+      final manifest = parseManifestJson(
+        File(p.join(src.path, 'manifest.json')).readAsStringSync(),
+      );
+      expect(manifest.isValid, isTrue);
+      final code = File(p.join(src.path, 'index.js')).readAsStringSync();
+
+      for (final ui in manifest.manifest!.provides.ui) {
+        final event = ui.onClickEvent ?? 'ui.click';
+        expect(
+          code.contains("tsukiro.event.on('$event'"),
+          isTrue,
+          reason: '清单声明点击发 $event，但 index.js 里没有监听它 —— 点了会毫无反应',
+        );
+      }
+    });
+
+    test('status-panel 的控件事件名也一致', () {
+      final src = Directory(p.join(repoRoot().path, 'plugins', 'status-panel'));
+      final manifest = parseManifestJson(
+        File(p.join(src.path, 'manifest.json')).readAsStringSync(),
+      );
+      final code = File(p.join(src.path, 'index.js')).readAsStringSync();
+
+      void check(List<UiDeclaration> list) {
+        for (final ui in list) {
+          final event = ui.onClickEvent ?? 'ui.click';
+          // toggle 走兜底的 ui.click，status-panel 里监听了
+          expect(code.contains("tsukiro.event.on('$event'"), isTrue,
+              reason: '${ui.id} 声明 $event，但代码里没监听');
+          check(ui.children);
+        }
+      }
+
+      check(manifest.manifest!.provides.ui);
     });
   });
 }
