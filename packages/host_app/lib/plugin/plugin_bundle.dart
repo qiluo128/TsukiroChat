@@ -162,6 +162,12 @@ class PluginScriptBuilder {
     final pluginId = bundle.manifest.id;
     final hostApi = bundle.manifest.hostApi ?? '^1.0.0';
 
+    // **占位符本身不带引号**（见 tsukiro.js 顶部的说明）。
+    //
+    // `jsonEncode` 生成的字面量自带引号，直接替换裸名字即可。
+    // 早先占位符写成 `'__PLUGIN_ID__'`，替换出来是 `'"dev.x"'` ——
+    // JS 求值得到带引号字符的字符串，握手时身份校验判"冒充"终止会话，
+    // 而表现只是"15 秒没完成握手"。
     final runtime = runtimeSource
         .replaceAll('__PLUGIN_ID__', _jsStringLiteral(pluginId))
         .replaceAll('__HOST_API__', _jsStringLiteral(hostApi));

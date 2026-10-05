@@ -77,7 +77,12 @@ export default async function get_time(args) {
           'handlers/get_time.js': 'export default async () => ({ ok: true });',
         },
         slotSources: const <String, String>{},
-      )).buildHtml(runtimeSource: 'var PLUGIN = "__PLUGIN_ID__"; var API = "__HOST_API__";');
+      )).buildHtml(
+        // 占位符**不带引号** —— 与真实的 tsukiro.js 保持一致。
+        // 用带引号的形式会让这个测试失去意义：它正是漏掉
+        // "引号套引号"那个 bug 的原因。
+        runtimeSource: 'var PLUGIN = __PLUGIN_ID__; var API = __HOST_API__;',
+      );
     });
 
     test('带 CSP，且默认拒绝一切外部资源', () {
@@ -88,8 +93,18 @@ export default async function get_time(args) {
       expect(html, isNot(contains('connect-src')));
     });
 
-    test('占位符被替换成真实身份', () {
-      expect(html, contains('"dev.test.sample"'));
+    test('占位符被替换成合法的 JS 字符串字面量，值就是插件 id', () {
+      // **关键：断言的是"JS 求值后等于 id"，不是"HTML 里出现了这个字符串"。**
+      //
+      // 早先的版本只检查 `contains('"dev.test.sample"')` ——
+      // 而坏注入 `var PLUGIN_ID = '"dev.test.sample"';` 里当然也包含它，
+      // 于是测试通过、真机全挂。那次的表现是：
+      // 身份校验判"冒充"终止会话 → 15 秒超时，完全看不出真正原因。
+      expect(html, contains('var PLUGIN = "dev.test.sample";'));
+      expect(html, contains('var API = "^1.0.0";'));
+
+      // 明确排除"引号套引号"
+      expect(html, isNot(contains("'\"dev.test.sample\"'")));
       expect(html, isNot(contains('__PLUGIN_ID__')));
       expect(html, isNot(contains('__HOST_API__')));
     });

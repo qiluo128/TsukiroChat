@@ -277,13 +277,15 @@ class _PluginCardState extends State<_PluginCard> {
                     ],
                   ),
                 ),
-                Switch(
-                  value: plugin.enabled,
-                  onChanged: (v) async {
-                    await widget.host?.setEnabled(plugin.id, v);
-                    widget.onChanged();
-                  },
-                ),
+                // 一个控件，不是两个。
+                //
+                // 之前这里是「开关 + 下方的启动按钮」——两套入口表达同一件事，
+                // 而且开关说的是"用户想不想要"，按钮说的是"实际在不在跑"。
+                // 用户看到开关是开的、插件却是停的，自然会去点启动按钮，
+                // 然后两个控件的状态对不上。
+                //
+                // 现在只有一个动作按钮，文案就是**下一步会做什么**。
+                _StateAction(plugin: plugin, host: widget.host),
               ],
             ),
           ),
@@ -349,17 +351,6 @@ class _PluginCardState extends State<_PluginCard> {
 
           Row(
             children: <Widget>[
-              // 没起来时给一个明确的手动入口。
-              // 自动启动可能因为超时/时序失败，用户不该只能干看着。
-              if (!plugin.isReady && plugin.enabled && !plugin.manifest.isZeroCode)
-                TextButton.icon(
-                  onPressed: () async {
-                    await widget.host?.startNow(plugin.id);
-                    widget.onChanged();
-                  },
-                  icon: Icon(Icons.play_arrow_rounded, size: 16, color: t.primary),
-                  label: Text('启动', style: TextStyle(color: t.primary)),
-                ),
               TextButton.icon(
                 onPressed: () => setState(() => _expanded = !_expanded),
                 icon: Icon(
@@ -408,6 +399,92 @@ class _PluginCardState extends State<_PluginCard> {
   }
 }
 
+/// 唯一的启停控件。
+///
+/// 文案 = **下一步会做什么**，所以任何时候用户都清楚：
+///   - 现在是什么状态（左边徽章）
+///   - 点下去会发生什么（按钮文案）
+///
+/// 零代码插件（只有主题/人设声明，没有 JS）不给这个按钮 ——
+/// 它们本来就没有"运行"这个概念，给个永远点不亮的按钮只会让人困惑。
+class _StateAction extends StatelessWidget {
+  const _StateAction({required this.plugin, required this.host});
+
+  final InstalledPlugin plugin;
+  final PluginHost? host;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+
+    // 零代码插件：明说它不需要运行
+    if (plugin.manifest.isZeroCode) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Tooltip(
+          message: '零代码插件由声明直接生效，不需要启动',
+          child: Icon(Icons.check_circle_outline, size: 20, color: t.success),
+        ),
+      );
+    }
+
+    // 启动中
+    if (plugin.enabled &&
+        (plugin.state == RuntimeState.loading || plugin.state == RuntimeState.created)) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SizedBox(
+              width: 13,
+              height: 13,
+              child: CircularProgressIndicator(strokeWidth: 2, color: t.primary),
+            ),
+            const SizedBox(width: 6),
+            Text('启动中', style: TextStyle(fontSize: 12.5, color: t.primary)),
+          ],
+        ),
+      );
+    }
+
+    // 已启用但没跑起来（失败/停止）→ 重试
+    if (plugin.enabled && !plugin.isReady) {
+      return OutlinedButton(
+        onPressed: () => host?.startNow(plugin.id),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(64, 34),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          foregroundColor: t.primary,
+        ),
+        child: const Text('重试', style: TextStyle(fontSize: 13)),
+      );
+    }
+
+    // 运行中 → 停用
+    if (plugin.enabled) {
+      return OutlinedButton(
+        onPressed: () => host?.setEnabled(plugin.id, false),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(64, 34),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+        ),
+        child: const Text('停用', style: TextStyle(fontSize: 13)),
+      );
+    }
+
+    // 已停用 → 启用
+    return FilledButton(
+      onPressed: () => host?.setEnabled(plugin.id, true),
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(64, 34),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+      ),
+      child: const Text('启用', style: TextStyle(fontSize: 13)),
+    );
+  }
+}
+
 class _StateBadge extends StatelessWidget {
   const _StateBadge({required this.plugin});
 
@@ -417,23 +494,32 @@ class _StateBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
 
+    // 零代码插件没有"运行"这个概念 —— 它的声明（主题/人设）装完就生效，
+    // 显示"未启动"只会让人以为它坏了
+    if (plugin.manifest.isZeroCode) {
+      return _badge('已启用', t.success);
+    }
+    if (!plugin.enabled) return _badge('已停用', t.textMuted);
+
     final (String text, Color color) = switch (plugin.state) {
       RuntimeState.ready => ('运行中', t.success),
       RuntimeState.loading => ('启动中', t.primary),
-      RuntimeState.failed => ('失败', t.danger),
+      RuntimeState.failed => ('启动失败', t.danger),
       RuntimeState.stopped => ('已停止', t.textMuted),
-      RuntimeState.created => ('未启动', t.textMuted),
+      // created 表示"运行时已创建但还没加载完" —— 对用户来说就是启动中
+      RuntimeState.created => ('启动中', t.primary),
     };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(text, style: TextStyle(fontSize: 10.5, color: color)),
-    );
+    return _badge(text, color);
   }
+
+  Widget _badge(String text, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(text, style: TextStyle(fontSize: 10.5, color: color)),
+      );
 }
 
 class _Tag extends StatelessWidget {

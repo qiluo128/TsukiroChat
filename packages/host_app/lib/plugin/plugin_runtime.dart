@@ -185,9 +185,13 @@ class WebViewPluginRuntime implements PluginRuntime {
       await _readyCompleter.future.timeout(readyTimeout);
       _state = RuntimeState.ready;
       _log('info', '运行时就绪');
-    } on TimeoutException {
+    } catch (e) {
       _state = RuntimeState.failed;
-      _failureReason = '插件未在 ${readyTimeout.inSeconds} 秒内完成握手';
+      // 区分"超时"和"被终止"：前者是插件没反应，后者是宿主主动拒绝，
+      // 两者的排查方向完全不同
+      _failureReason = e is TimeoutException
+          ? '插件未在 ${readyTimeout.inSeconds} 秒内完成握手'
+          : '$e';
       _log('error', _failureReason!);
       rethrow;
     }
@@ -315,6 +319,18 @@ class WebViewPluginRuntime implements PluginRuntime {
     // 日志里握手是成功的，但状态就是 failed。
     if (_session.isReady && !_readyCompleter.isCompleted) {
       _readyCompleter.complete();
+      return;
+    }
+
+    // **会话被终止时立刻失败，不要等满 15 秒。**
+    //
+    // 身份不符、协议版本不符这类问题在第一条消息就判定了，
+    // 原因也写得很清楚。让用户干等 15 秒再报一个笼统的超时，
+    // 等于把已经拿到的诊断信息扔掉。
+    if (_session.isTerminated && !_readyCompleter.isCompleted) {
+      _readyCompleter.completeError(StateError(
+        _session.terminationReason ?? 'bridge 会话被终止',
+      ));
     }
   }
 

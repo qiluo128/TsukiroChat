@@ -19,18 +19,20 @@
  * 已经写下的插件代码就是规格。让运行时去对齐它，
  * 而不是反过来让每个插件作者改代码。
  *
- * 注入时宿主替换两个占位符：
- *   __PLUGIN_ID__   宿主绑定的插件身份（插件不能自称别的 id —— 握手会校验）
- *   __HOST_API__    宿主 API 版本
+ * 注入时宿主替换两个占位符。**占位符不带引号** ——
+ * 宿主用 `jsonEncode` 生成字面量，那个结果自带引号：
+ *     var PLUGIN_ID = __PLUGIN_ID__;   →   var PLUGIN_ID = "dev.tsukiro.time";
  *
- * 协议见 docs/07-bridge-protocol.md。
+ * 早先这里写的是 `'__PLUGIN_ID__'`（带引号），于是替换出来变成
+ * `'"dev.tsukiro.time"'` —— JS 求值得到的是**带引号字符的字符串**，
+ * 握手时身份校验判"冒充"直接终止会话。不带引号就不会有这个问题。
  */
 (function () {
   'use strict';
 
   var PROTOCOL_VERSION = 1;
-  var PLUGIN_ID = '__PLUGIN_ID__';
-  var HOST_API = '__HOST_API__';
+  var PLUGIN_ID = __PLUGIN_ID__;
+  var HOST_API = __HOST_API__;
 
   // ─────────────────────────── 桥接底层 ───────────────────────────
 
