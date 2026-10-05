@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:plugin_core/plugin_core.dart';
 
 import 'providers/app_providers.dart';
 import 'providers/plugin_providers.dart';
@@ -15,14 +16,36 @@ import 'ui/settings/settings_page.dart';
 
 /// 指定明暗下的设计令牌。
 ///
-/// 用 `family` 按明暗分别缓存 —— 切主题时不用重新解析。
+/// **会叠加已启用美化包（L1）的令牌。**
 ///
-/// 接入美化包之后，这里改成「从已启用的主题插件取 [ThemeDeclaration]
-/// → `AppTokens.fromTheme(theme, base: AppTokens.defaults(brightness: ...))`」，
-/// **其余代码一行不用改** —— 所有控件都是通过 `context.tokens` 取值的。
-final appTokensProvider = Provider.family<AppTokens, Brightness>(
-  (ref, brightness) => AppTokens.defaults(brightness: brightness),
-);
+/// 这一步以前完全没实现 —— 注释里写着"接入美化包之后改成…"，
+/// 但代码一直只返回宿主默认值，所以主题插件装了也看不出任何变化。
+///
+/// 美化包改颜色但**不改明暗** —— 那是用户的偏好（见 `AppTokens.fromTheme`）。
+final appTokensProvider = Provider.family<AppTokens, Brightness>((ref, brightness) {
+  final base = AppTokens.defaults(brightness: brightness);
+
+  final host = ref.watch(pluginHostValueProvider);
+  // 插件启停会改变可用主题，跟着重建
+  ref.watch(pluginHostRevisionProvider);
+  if (host == null) return base;
+
+  final available = host.availableThemes();
+  if (available.isEmpty) return base;
+
+  // 选择语义：
+  //   null（没设置过）→ 自动用第一个。用户装了主题插件就该看到效果，
+  //                     否则他会以为插件坏了（正是本次反馈的现象）
+  //   ''            → 用户明确要求"不用插件主题"
+  //   其它          → 按 id 找
+  final selected = ref.watch(activeThemeProvider).valueOrNull;
+  final ThemeDeclaration? chosen = selected == null
+      ? available.first
+      : (selected.isEmpty ? null : host.themeById(selected));
+  if (chosen == null) return base;
+
+  return AppTokens.fromTheme(chosen, base: base);
+});
 
 abstract final class Routes {
   static const String settings = '/settings';

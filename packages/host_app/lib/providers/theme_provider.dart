@@ -40,7 +40,31 @@ enum ThemePreference {
 
 abstract final class ThemeKeys {
   static const String preference = 'theme.preference';
+
+  /// 生效的美化包 id。
+  ///
+  /// 未设置 = 自动（用第一个可用的）；空串 = 明确要求不用插件主题。
+  static const String activeTheme = 'theme.active';
 }
+
+/// 生效的美化包 id。
+class ActiveThemeNotifier extends AsyncNotifier<String?> {
+  @override
+  Future<String?> build() async {
+    final repos = await ref.watch(reposProvider.future);
+    return repos.settings.get(ThemeKeys.activeTheme);
+  }
+
+  /// 选定一个美化包（传 null 表示回到自动）。
+  Future<void> select(String? themeId) async {
+    state = AsyncData(themeId);
+    final repos = await ref.read(reposProvider.future);
+    await repos.settings.set(ThemeKeys.activeTheme, themeId ?? '');
+  }
+}
+
+final activeThemeProvider =
+    AsyncNotifierProvider<ActiveThemeNotifier, String?>(ActiveThemeNotifier.new);
 
 class ThemePreferenceNotifier extends AsyncNotifier<ThemePreference> {
   @override

@@ -12,6 +12,7 @@ import '../providers/app_providers.dart';
 import '../theme/app_theme.dart';
 import 'agent_edit_page.dart';
 import 'conversation_list_page.dart';
+import 'plugin_slot.dart';
 
 class AgentListPage extends ConsumerWidget {
   const AgentListPage({super.key});
@@ -54,25 +55,41 @@ class AgentListPage extends ConsumerWidget {
             ],
           ),
         ),
-        data: (list) => list.isEmpty
-            ? const _EmptyGuide()
-            : RefreshIndicator(
-                onRefresh: () async => ref.invalidate(agentListProvider),
-                child: ListView.separated(
-                  padding: EdgeInsets.symmetric(vertical: t.spacing.page.toDouble() / 2),
-                  itemCount: list.length,
-                  separatorBuilder: (_, _) => Divider(
-                    height: 1,
-                    indent: t.spacing.page.toDouble() + 56,
-                    endIndent: t.spacing.page.toDouble(),
-                  ),
-                  itemBuilder: (context, i) => _AgentTile(
-                    agent: list[i],
-                    onTap: () => _openAgent(context, ref, list[i]),
-                    onEdit: () => _editAgent(context, ref, list[i]),
-                  ),
-                ),
-              ),
+        data: (list) => Column(
+          children: <Widget>[
+            // 插件插槽：首页卡片区。
+            //
+            // 之前 home.cards 和 agent.sections **完全没放进任何界面** ——
+            // 插件声明了也永远看不到。用户以为插件坏了，其实是宿主没给位置。
+            PluginSlot(
+              slot: 'home.cards',
+              axis: Axis.vertical,
+              context: <String, dynamic>{'agentCount': list.length},
+            ),
+            Expanded(
+              child: list.isEmpty
+                  ? const _EmptyGuide()
+                  : RefreshIndicator(
+                      onRefresh: () async => ref.invalidate(agentListProvider),
+                      child: ListView.separated(
+                        padding:
+                            EdgeInsets.symmetric(vertical: t.spacing.page.toDouble() / 2),
+                        itemCount: list.length,
+                        separatorBuilder: (_, _) => Divider(
+                          height: 1,
+                          indent: t.spacing.page.toDouble() + 56,
+                          endIndent: t.spacing.page.toDouble(),
+                        ),
+                        itemBuilder: (context, i) => _AgentTile(
+                          agent: list[i],
+                          onTap: () => _openAgent(context, ref, list[i]),
+                          onEdit: () => _editAgent(context, ref, list[i]),
+                        ),
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

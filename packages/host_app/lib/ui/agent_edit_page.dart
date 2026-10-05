@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/models.dart';
 import '../providers/app_providers.dart';
+import 'plugin_slot.dart';
 import '../theme/app_theme.dart';
 import 'settings/model_picker_page.dart';
 
@@ -161,6 +162,20 @@ class _AgentEditPageState extends ConsumerState<AgentEditPage> {
                   ],
                 ),
                 onTap: () => _pickModel(agent),
+              ),
+
+              const SizedBox(height: 8),
+              // 插件插槽：智能体详情分区。
+              //
+              // status-panel 的「状态面板」声明在 agent.sections ——
+              // 这里不放位置的话，插件声明了也永远看不到。
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: t.spacing.page.toDouble()),
+                child: PluginSlot(
+                  slot: 'agent.sections',
+                  axis: Axis.vertical,
+                  context: <String, dynamic>{'agentId': widget.agentId},
+                ),
               ),
 
               const SizedBox(height: 8),

@@ -189,6 +189,29 @@ class PluginHost extends ChangeNotifier {
     }
   }
 
+  // ─────────────────────────── 主题 ───────────────────────────
+
+  /// 已启用插件声明的全部主题（L1 美化包）。
+  ///
+  /// **宿主不预设哪个生效** —— 由界面根据用户的主题选择决定。
+  /// 这个入口只负责把「有哪些可选」汇总出来。
+  ///
+  /// 之前完全缺这一步，所以 `appTokensProvider` 永远返回宿主默认值，
+  /// 美化包装了也看不出任何变化（正是用户反馈的「主题插件无效果」）。
+  List<ThemeDeclaration> availableThemes() => <ThemeDeclaration>[
+        for (final p in _plugins)
+          if (p.enabled) ...p.manifest.provides.themes,
+      ];
+
+  /// 按 id 找主题声明。
+  ThemeDeclaration? themeById(String? id) {
+    if (id == null || id.isEmpty) return null;
+    for (final t in availableThemes()) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
+
   // ─────────────────────────── 插槽 ───────────────────────────
 
   /// 某个插槽里当前应该显示什么。
@@ -451,22 +474,52 @@ class PluginHost extends ChangeNotifier {
   ) async {
     final plugin = _find(pluginId);
     if (plugin == null) {
-      return ToolInvocationResult.failure('NO_PLUGIN', '插件 $pluginId 未安装');
+      return _fail(pluginId, handler, 'NO_PLUGIN', '插件 $pluginId 未安装');
     }
     final runtime = plugin.runtime;
     if (runtime == null) {
-      return ToolInvocationResult.failure(
+      return _fail(
+        pluginId,
+        handler,
         'NOT_RUNNING',
         '插件 $pluginId 未运行（${plugin.enabled ? "正在启动" : "已被停用"}）',
       );
     }
     if (!runtime.isReady) {
-      return ToolInvocationResult.failure(
+      return _fail(
+        pluginId,
+        handler,
         'NOT_READY',
         '插件 $pluginId 的运行时未就绪（state=${runtime.state.name}）',
       );
     }
-    return runtime.invokeTool(handler, args);
+
+    final result = await runtime.invokeTool(handler, args);
+    if (!result.ok) {
+      // **工具失败必须留下痕迹。**
+      //
+      // 以前失败只报给模型，模型转述成"我无法获取"，
+      // 而用户和开发者都看不到真正的原因（未就绪？权限被拒？JS 抛错？）。
+      _note(pluginId, 'error', '工具 $handler 失败：'
+          '[${result.errorCode}] ${result.errorMessage}');
+    }
+    return result;
+  }
+
+  ToolInvocationResult _fail(
+    String pluginId,
+    String handler,
+    String code,
+    String message,
+  ) {
+    _note(pluginId, 'error', '工具 $handler 未执行：[$code] $message');
+    return ToolInvocationResult.failure(code, message);
+  }
+
+  /// 往插件的日志里写一条（用户能在插件管理页看到）。
+  void _note(String pluginId, String level, String message) {
+    _find(pluginId)?.runtime?.addExternalLog(level, message, null);
+    debugPrint('[plugin:$pluginId][$level] $message');
   }
 
   InstalledPlugin? _find(String pluginId) {

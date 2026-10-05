@@ -66,6 +66,13 @@ abstract class PluginRuntime {
   /// 界面据此给用户明确反馈，而不是点下去毫无反应。
   bool sendEvent(String event, [Map<String, dynamic>? payload]);
 
+  /// 往这个插件的日志里追加一条（宿主侧产生的记录）。
+  ///
+  /// 工具调用失败、事件投递失败这类事发生在宿主侧，但**必须在插件日志里
+  /// 能看到** —— 否则模型只会转述成"我无法获取"，而真正的原因
+  /// （未就绪？权限被拒？JS 抛错？）谁都看不到。
+  void addExternalLog(String level, String message, Object? data);
+
   /// 承载 WebView 的控件。宿主必须把它挂进树里，否则 Android 侧不会创建
   /// 底层 WebView，JS 也就不会跑。
   Widget buildView();
@@ -347,7 +354,8 @@ class WebViewPluginRuntime implements PluginRuntime {
     if (kDebugMode) debugPrint('[plugin:$pluginId][$level] $message');
   }
 
-  /// 供宿主转发的插件日志（`plugin.log` 事件）。
+  /// 供宿主转发的插件日志（`plugin.log` 事件、工具调用失败等）。
+  @override
   void addExternalLog(String level, String message, Object? data) =>
       _log(level, message, data);
 }
