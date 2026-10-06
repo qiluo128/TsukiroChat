@@ -35,14 +35,38 @@ class AgentContextBuilder {
   }
 
   /// 在插件任务消息前插入 Agent 上下文。
+  ///
+  /// [includeHistory] 打开时会把最近的对话消息也拼进去。
+  ///
+  /// **插件调 agent.* 时必须打开它。** 否则用户说"打招呼"，
+  /// 智能体拿到的是"人设 + 心情"，但**不知道刚才聊了什么** ——
+  /// 回复会像是第一次见面，而用户以为它一直记得。
+  /// （用户反馈的「似乎只有人设」就是这个。）
   Future<List<ChatMessage>> messages(
     Agent agent,
     List<ChatMessage> taskMessages, {
     String? conversationId,
+    bool includeHistory = false,
+    int historyLimit = 20,
   }) async {
     final prompt = await systemPrompt(agent, conversationId: conversationId);
+    final history = <ChatMessage>[];
+
+    if (includeHistory && conversationId != null && conversationId.isNotEmpty) {
+      final stored = await repos.messages.list(conversationId, limit: historyLimit);
+      for (final m in stored) {
+        // 跳过错的和空的 —— 与主聊天历史同一套过滤规则
+        if (m.status != MessageStatus.done) continue;
+        if (m.role != ChatRole.user && m.role != ChatRole.assistant) continue;
+        final text = m.content;
+        if (text == null || text.trim().isEmpty) continue;
+        history.add(ChatMessage(role: m.role, content: text));
+      }
+    }
+
     return <ChatMessage>[
       if (prompt.isNotEmpty) ChatMessage.system(prompt),
+      ...history,
       ...taskMessages,
     ];
   }

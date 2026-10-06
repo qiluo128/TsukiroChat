@@ -25,6 +25,8 @@ class _E {
     this.kind = PrimitiveKind.request,
     this.schema = const <String, dynamic>{},
     this.since = '0.1.0',
+    this.defaultTimeoutMs = 10000,
+    this.maxTimeoutMs = 60000,
   });
 
   final String name;
@@ -33,6 +35,15 @@ class _E {
   final PrimitiveKind kind;
   final Map<String, dynamic> schema;
   final String since;
+
+  /// 单次调用的默认超时预算。
+  ///
+  /// **调用模型的那些原语必须显式放宽** —— 目录默认 10 秒，
+  /// 而推理模型一次要 20–30 秒，用默认值就是必然超时。
+  final int defaultTimeoutMs;
+
+  /// 超时上限。插件可以通过 args.timeoutMs 申请，但会被夹到这里。
+  final int maxTimeoutMs;
 }
 
 /// 全部原语声明。
@@ -51,6 +62,8 @@ List<PrimitiveSpec> standardPrimitiveCatalog({
         kind: e.kind,
         paramsSchema: e.schema,
         since: e.since,
+        defaultTimeoutMs: e.defaultTimeoutMs,
+        maxTimeoutMs: e.maxTimeoutMs,
       );
     }
     return PrimitiveSpec(
@@ -61,6 +74,8 @@ List<PrimitiveSpec> standardPrimitiveCatalog({
       paramsSchema: e.schema,
       handler: handler,
       since: e.since,
+      defaultTimeoutMs: e.defaultTimeoutMs,
+      maxTimeoutMs: e.maxTimeoutMs,
     );
   }).toList(growable: false);
 }
@@ -164,7 +179,13 @@ final List<_E> _entries = <_E>[
   _E('agent.state.get', '读取当前智能体状态', permission: 'agent.state.read'),
   _E('agent.state.set', '更新当前智能体状态', permission: 'agent.state.write'),
   _E('agent.greet', '让当前智能体回应一次问候并记住这次互动', permission: 'agent.state.write'),
-  _E('agent.model.chat', '使用当前智能体模型生成文本', permission: 'model.chat'),
+  _E('agent.model.chat', '使用当前智能体模型生成文本',
+      permission: 'model.chat',
+      // **调用模型的原语不能用目录默认的 10 秒。**
+      // 实测推理模型一次要 20–30 秒（docs/17），10 秒必然超时 ——
+      // 而超时报的是"原语超时"，看起来像宿主卡住，实际是预算给少了。
+      defaultTimeoutMs: 120000,
+      maxTimeoutMs: 300000,),
   _E('surface.open', '打开插件 Surface', permission: 'ui.surface'),
   _E('surface.update', '更新插件 Surface 状态', permission: 'ui.surface'),
   _E('surface.close', '关闭插件 Surface', permission: 'ui.surface'),
@@ -311,6 +332,11 @@ final List<_E> _entries = <_E>[
   // ───────────────────── 15. 模型（走宿主网关） ─────────────────────
   _E('model.chat', '调用 AI 模型（消耗用户点数；插件拿不到任何 Key）',
       permission: 'model.chat',
+      // **不能用目录默认的 10 秒。**
+      // 实测推理模型一次要 20–30 秒（docs/17），10 秒必然超时 ——
+      // 而超时报的是「原语超时」，看起来像宿主卡住，实际是预算给少了。
+      defaultTimeoutMs: 120000,
+      maxTimeoutMs: 300000,
       schema: <String, dynamic>{
         'type': 'object',
         'properties': <String, dynamic>{

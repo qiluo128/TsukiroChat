@@ -51,6 +51,35 @@ final chatContextProvider = Provider<AppChatContext>(
 final surfaceControllerProvider = Provider<PluginSurfaceController>((ref) =>
     PluginSurfaceController(navigatorKey: appNavigatorKey));
 
+/// 插件的智能体状态（心情、看法…）。
+///
+/// **单独做成 provider 而不是塞在服务表里** —— 界面要 watch 它。
+/// 服务表是命令式的（按类型 get），Riverpod 观察不到它的变化；
+/// 而"插件改了状态 → 面板要重画"这件事必须有响应式通道。
+final agentStateProvider =
+    FutureProvider.family<Map<String, dynamic>, String>((ref, pluginId) async {
+  final service = ref.watch(agentStateServiceProvider);
+  try {
+    return await service.getState(pluginId);
+  } catch (_) {
+    // 没有当前智能体时返回空表，界面显示"读取中…"而不是崩
+    return <String, dynamic>{};
+  }
+});
+
+/// 智能体状态服务的单例。
+final Provider<AppAgentState> agentStateServiceProvider = Provider<AppAgentState>((ref) {
+  return AppAgentState(
+    repos: ref.watch(reposProvider.future),
+    chat: ref.watch(chatContextProvider),
+    utility: ref.watch(utilityModelServiceProvider),
+    agentGateway: (agentId) => ref.read(gatewayForAgentProvider(agentId)),
+    surfaceController: ref.watch(surfaceControllerProvider),
+    // 插件改状态 → 让对应的 provider 失效 → 面板重画
+    onChanged: (pluginId) => ref.invalidate(agentStateProvider(pluginId)),
+  );
+});
+
 final primitiveRegistryProvider = Provider<PrimitiveRegistry>((ref) {
   // 先建一个**可变的服务表**，再把它交给注册表 ——
   // `primitive.list` / `host.capabilities` 要自省 PrimitiveRegistry 本身，
@@ -75,13 +104,7 @@ final primitiveRegistryProvider = Provider<PrimitiveRegistry>((ref) {
     ..put<PrimitiveRegistry>(registry)
     ..put<HookBus>(ref.watch(hookBusProvider))
     ..put<HostChatContext>(ref.watch(chatContextProvider))
-    ..put<HostAgentState>(AppAgentState(
-      repos: ref.watch(reposProvider.future),
-      chat: ref.watch(chatContextProvider),
-      utility: ref.watch(utilityModelServiceProvider),
-      agentGateway: (agentId) => ref.read(gatewayForAgentProvider(agentId)),
-      surfaceController: ref.watch(surfaceControllerProvider),
-    ))
+    ..put<HostAgentState>(ref.watch(agentStateServiceProvider))
     ..put<HostPluginConfig>(AppPluginConfig(repos: ref.watch(reposProvider.future)));
 
   // model.chat 用的模型网关。

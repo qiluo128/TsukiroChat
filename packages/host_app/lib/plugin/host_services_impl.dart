@@ -272,7 +272,20 @@ class AppChatContext implements HostChatContext {
 // ═══════════════════════════ 智能体状态与记忆 ═══════════════════════════
 
 class AppAgentState implements HostAgentState {
-  AppAgentState({required this.repos, required this.chat, required this.utility, required this.agentGateway, this.surfaceController});
+  AppAgentState({
+    required this.repos,
+    required this.chat,
+    required this.utility,
+    required this.agentGateway,
+    this.surfaceController,
+    this.onChanged,
+  });
+
+  /// 插件改了智能体状态后回调，用来通知界面重建。
+  ///
+  /// **没有它，状态面板就永远停在第一次读到的值上** ——
+  /// 插件改了库，但宿主界面不知道要重画（用户反馈的「不更新」）。
+  final void Function(String pluginId)? onChanged;
 
   final Future<Repos> repos;
   final AppChatContext chat;
@@ -320,6 +333,8 @@ class AppAgentState implements HostAgentState {
     if (patch.containsKey('opinion')) next['opinion'] = '${patch['opinion']}'.trim();
     if (patch.containsKey('lastGreeting')) next['lastGreeting'] = '${patch['lastGreeting']}';
     await (await repos).settings.set(_stateKey(pluginId), jsonEncode(next));
+    // 通知界面重建 —— 少了这一步，插件改了状态但面板永远显示旧值
+    onChanged?.call(pluginId);
     return next;
   }
 
@@ -329,8 +344,13 @@ class AppAgentState implements HostAgentState {
     final agent = await (await repos).agents.get(chat.activeAgentId!);
     if (agent == null) throw StateError('当前智能体不存在');
     final state = await getState(pluginId);
-    final prompt = '用户刚刚向你打招呼。请结合你的角色设定和当前状态，简短回应一句自然的话。'
-        '\n角色设定：${agent.persona.buildSystemPrompt()}'
+    // **人设不再写进这里。**
+    //
+    // 它已经通过 AgentContextBuilder 进了 system prompt；
+    // 在 user 消息里再抄一遍，会让模型以为"人设"是这一轮的新指令，
+    // 反而压过记忆和对话历史 —— 表现就是「只有人设」。
+    final prompt = '用户刚刚向你打招呼。请结合你的角色、你们之前的对话和当前状态，'
+        '简短回应一句自然的话。'
         '\n当前心情：${state['mood']} / 100；你对用户的看法：${state['opinion']}';
     final gateway = agentGateway(chat.activeAgentId!);
     if (gateway == null) throw StateError('当前智能体没有可用模型');
@@ -342,6 +362,8 @@ class AppAgentState implements HostAgentState {
       agent,
       taskMessages,
       conversationId: chat.activeConversationId,
+      // 带对话历史 —— 用户反馈「打招呼像是第一次见面」就是这里缺的
+      includeHistory: true,
     );
     final reply = await gateway.complete(ModelRequest(
       messages: messages,
@@ -383,6 +405,7 @@ class AppAgentState implements HostAgentState {
       agent,
       taskMessages,
       conversationId: chat.activeConversationId,
+      includeHistory: true,
     );
     final reply = await gateway.complete(ModelRequest(messages: contextualMessages));
     return <String, dynamic>{'text': reply.text, 'model': gateway.activeModel};

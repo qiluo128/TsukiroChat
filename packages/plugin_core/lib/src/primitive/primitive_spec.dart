@@ -92,9 +92,9 @@ class PrimitiveSpec {
     this.paramsSchema = const <String, dynamic>{},
     this.since = '0.1.0',
     this.platforms,
-  })  : handler = null,
-        defaultTimeoutMs = 10000,
-        maxTimeoutMs = 60000;
+    this.defaultTimeoutMs = 10000,
+    this.maxTimeoutMs = 60000,
+  }) : handler = null;
 
   /// 形如 `sys.time`。必须至少两段。
   final String name;

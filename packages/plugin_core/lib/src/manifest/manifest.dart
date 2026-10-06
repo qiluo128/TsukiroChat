@@ -191,6 +191,7 @@ class UiDeclaration {
   /// 绑定到 `config.schema` 的字段信息。
   final Map<String, dynamic>? config;
 
+
   /// 受控宿主状态绑定，例如 `agent.mood.label`；只读展示。
   final String? binding;
 

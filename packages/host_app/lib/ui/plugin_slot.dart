@@ -18,7 +18,6 @@ import 'package:plugin_core/plugin_core.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../providers/plugin_providers.dart';
-import '../plugin/plugin_host.dart';
 import '../theme/app_theme.dart';
 
 /// 一个插槽位。
@@ -239,15 +238,21 @@ class _DeclarationWidgetState extends State<_DeclarationWidget> {
       );
     }
 
-    final host = widget.host as PluginHost;
-    final state = host.agentState;
-    return FutureBuilder<Map<String, dynamic>>(
-      future: state?.getState(widget.registered.pluginId) ??
-          Future<Map<String, dynamic>>.value(const <String, dynamic>{}),
-      builder: (context, snapshot) {
-        final data = snapshot.hasError
-            ? const <String, dynamic>{'mood': 50, 'opinion': '还在了解中'}
-            : (snapshot.data ?? const <String, dynamic>{'mood': 50, 'opinion': '还在了解中'});
+    // **走 provider，不在这里新建 Future。**
+    //
+    // 原先是每次 build 都 `state.getState(...)` —— 两个问题：
+    //   1. 每次都造一个新 Future，FutureBuilder 回到"等待中"，界面会闪
+    //   2. **插件改状态时没人通知它重跑**，于是「只更新了一次就不动了」
+    //
+    // Riverpod 会缓存同一个 family 实例；插件 setState 时
+    // AppAgentState.onChanged 会 invalidate 它，这里才重新取值。
+    return Consumer(
+      builder: (context, ref, _) {
+        const fallback = <String, dynamic>{'mood': 50, 'opinion': '还在了解中'};
+        final snapshot = ref.watch(agentStateProvider(widget.registered.pluginId));
+        final data = (snapshot.hasError || snapshot.valueOrNull == null)
+            ? fallback
+            : snapshot.valueOrNull!;
         final value = _bindingValue(data, binding);
         final text = value == null ? '${decl.label ?? ''}：读取中…' : '${decl.label ?? ''}：$value';
         return Padding(
