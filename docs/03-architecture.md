@@ -115,7 +115,8 @@
 | `feature/chat` | 聊天页、消息列表、输入框、流式渲染 |
 | `feature/plugins` | 插件管理页、安装流程、权限弹窗 |
 | `feature/settings` | 设置页（含隐藏的高级设置） |
-| `platform/webview` | `flutter_inappwebview` 封装、沙箱数据目录、Bridge 绑定 |
+| `platform/webview` | `webview_flutter` 封装、沙箱数据目录、Bridge 绑定；Interactive Web Surface 由宿主控制生命周期 |
+| `platform/flame_surface` | 受信任的 FlameGame factory 与 GameWidget 容器；普通插件不能上传 Dart/Flutter 代码 |
 | `platform/native` | 平台通道：文件选择、权限申请、系统能力 |
 | `data/db` | Drift 定义、迁移 |
 | `data/repo` | 会话/消息/插件/审计仓储（只此一处直接访问 DAO） |
@@ -253,7 +254,8 @@ app/shell ──▶ feature/* ──▶ data/repo ──▶ data/db
 | 宿主语言 | **Flutter + Dart** | 一套代码覆盖 Android/iOS，且 `plugin_core` 可用纯 Dart 写、桌面单测 | Kotlin + Compose（仅 Android，开发快但绑定平台） |
 | 本地数据库 | **Drift** | 类型安全、编译期 SQL 校验、迁移能力强、支持后台 isolate | sqflite（轻但无类型安全）、Isar（已停维护） |
 | 网络 | **Dio** | 拦截器、流式响应、取消、超时控制成熟 | `http`（太薄） |
-| WebView | **flutter_inappwebview** | JS Channel 双向通信、独立数据目录、可注入脚本 | `webview_flutter`（通信能力弱） |
+| WebView | **webview_flutter** | 当前实现已使用，JS Channel/独立容器由宿主封装 | `flutter_inappwebview`（功能更丰富但额外依赖） |
+| Flame Surface | **host_app 内置 Flame factory** | 受控 GameWidget，manifest 只选择 gameType，不执行插件 Dart | 普通插件动态注入 Flutter（禁止） |
 | 状态管理 | **Riverpod** | 编译期安全、易测试、无需 BuildContext | Provider / Bloc |
 | 路由 | **go_router** | 声明式、深链接支持（人设包分享链接要用） | Navigator 2.0 手写 |
 

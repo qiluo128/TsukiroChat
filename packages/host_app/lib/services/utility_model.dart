@@ -132,8 +132,10 @@ class UtilityModelService {
   UtilityModelService(this._gateway);
 
   final HttpModelGateway? _gateway;
+  String? _lastFailure;
 
   bool get isAvailable => _gateway != null;
+  String? get lastFailure => _lastFailure;
 
   /// 通用的一次性调用。
   Future<String?> complete(
@@ -143,9 +145,13 @@ class UtilityModelService {
     Duration timeout = const Duration(seconds: 20),
   }) async {
     final gateway = _gateway;
-    if (gateway == null) return null;
+    if (gateway == null) {
+      _lastFailure = '没有可用的工具模型';
+      return null;
+    }
 
     try {
+      _lastFailure = null;
       final reply = await gateway
           .complete(ModelRequest(
             messages: <ChatMessage>[
@@ -159,11 +165,13 @@ class UtilityModelService {
       final text = reply.text.trim();
       return text.isEmpty ? null : text;
     } on TimeoutException {
+      _lastFailure = '工具模型请求超时';
       dev.log('工具模型超时（${timeout.inSeconds}s）', name: 'utility');
       return null;
     } catch (e) {
-      // 副任务失败是**正常情况**（没配模型、限流、余额不足…），
-      // 记一条日志就够了，不要往界面上弹错误
+      _lastFailure = '工具模型请求失败，请检查 API 配置或网络';
+      // 副任务失败是**正常情况**（限流、余额不足…），
+      // 记一条日志就够了，不要往界面上弹原始异常
       dev.log('工具模型调用失败: $e', name: 'utility');
       return null;
     }

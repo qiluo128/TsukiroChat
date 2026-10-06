@@ -36,6 +36,8 @@ class PluginPage extends ConsumerWidget {
               _Summary(host: host),
               const SizedBox(height: 8),
 
+              if (host != null && host.installErrors.isNotEmpty)
+                _InstallErrors(errors: host.installErrors),
               if (plugins.isEmpty)
                 const _Empty()
               else
@@ -69,7 +71,7 @@ class PluginPage extends ConsumerWidget {
                   t.spacing.page.toDouble(), 8, t.spacing.page.toDouble(), 0,
                 ),
                 child: Text(
-                  '从内置资源重新安装时间、翻译、樱花主题三个演示插件。'
+                  '从内置资源重新安装时间、翻译、状态、小游戏和石头剪刀布插件。'
                   '已经装着的会被覆盖。',
                   style: TextStyle(fontSize: 11.5, color: t.textMuted, height: 1.5),
                 ),
@@ -86,12 +88,15 @@ class PluginPage extends ConsumerWidget {
     if (host == null) return;
     var ok = 0;
     final failed = <String>[];
+    host.installErrors.clear();
     for (final assetDir in demoTemplatePlugins) {
       try {
         await host.installFromAssets(assetDir);
         ok++;
       } catch (e) {
-        failed.add('$assetDir：$e');
+        final message = '$assetDir：$e';
+        failed.add(message);
+        host.installErrors[assetDir] = '$e';
       }
     }
     // 同样不 invalidate —— installFromAssets 内部已经 _scan + notifyListeners
@@ -101,6 +106,29 @@ class PluginPage extends ConsumerWidget {
       duration: const Duration(seconds: 3),
     ));
   }
+}
+
+class _InstallErrors extends StatelessWidget {
+  const _InstallErrors({required this.errors});
+
+  final Map<String, String> errors;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        color: Theme.of(context).colorScheme.errorContainer,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('部分演示插件安装失败'),
+              for (final entry in errors.entries)
+                Text('${entry.key}: ${entry.value}', style: const TextStyle(fontSize: 11)),
+            ],
+          ),
+        ),
+      );
 }
 
 // ─────────────────────────── 组件 ───────────────────────────

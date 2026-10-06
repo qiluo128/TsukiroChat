@@ -37,7 +37,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // 放在 postFrame 里：provider 要等 widget 树就绪才安全。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(chatContextProvider).activeConversationId = widget.conversationId;
+      final chatContext = ref.read(chatContextProvider);
+      chatContext.activeConversationId = widget.conversationId;
+      final conversation = ref.read(conversationProvider(widget.conversationId)).valueOrNull;
+      // provider 仍在 loading 时不能把父页面已经绑定的 agentId 清空。
+      if (conversation != null) {
+        chatContext.activeAgentId = conversation.agentId;
+      }
     });
   }
 
@@ -46,7 +52,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     // **退出时要清掉**，否则插件会拿到一个已经关掉的对话：
     // 它的 chat.lastMessage() 会读到旧对话的内容，
     // 而用户以为自己已经不在那个对话里了。
-    ref.read(chatContextProvider).activeConversationId = null;
+    final chatContext = ref.read(chatContextProvider);
+    if (chatContext.activeConversationId == widget.conversationId) {
+      chatContext.activeConversationId = null;
+    }
     _scroll.dispose();
     _input.dispose();
     _inputFocus.dispose();

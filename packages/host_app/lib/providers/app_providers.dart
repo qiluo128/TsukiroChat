@@ -46,16 +46,31 @@ final reposProvider = FutureProvider<Repos>((ref) async {
 /// 这是**开发便利**，不是产品逻辑：省得每次装包都手填 Base URL 和 Key。
 /// 写进去之后就归设置页管了。
 Future<void> _seedDevProvider(Repos repos) async {
-  if (await repos.settings.get('devSeedApplied') == '1') return;
-
   final seed = await DevSeed.load();
   final provider = seed.provider;
-  if (provider != null) {
-    final row = provider.toModelProvider();
-    await repos.providers.upsert(row);
-    if (provider.defaultModel != null) {
-      await repos.providers.addManualModel(row.id, provider.defaultModel!);
-    }
+  if (provider == null) {
+    await repos.settings.set('devSeedApplied', '1');
+    return;
+  }
+
+  // 旧版本只看 devSeedApplied 标记：如果首次启动时配置缺失，
+  // 后来补上配置也永远不会恢复，最终工具模型一直不可用。
+  // 现在只有在 seed provider、凭据和默认模型都仍然存在时才跳过。
+  final existing = await repos.providers.get('provider_devseed');
+  final models = await repos.providers.modelsOf('provider_devseed');
+  final hasDefault = provider.defaultModel == null ||
+      models.any((model) => model.id == provider.defaultModel);
+  if (await repos.settings.get('devSeedApplied') == '1' &&
+      existing != null &&
+      existing.isUsable &&
+      hasDefault) {
+    return;
+  }
+
+  final row = provider.toModelProvider();
+  await repos.providers.upsert(row);
+  if (provider.defaultModel != null) {
+    await repos.providers.addManualModel(row.id, provider.defaultModel!);
   }
   await repos.settings.set('devSeedApplied', '1');
 }

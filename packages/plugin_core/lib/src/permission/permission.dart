@@ -76,6 +76,12 @@ const Map<String, PermissionSpec> permissionCatalog = <String, PermissionSpec>{
     PermissionLevel.install,
     '读取当前对话的上下文（最近一条消息、会话信息）',
   ),
+  'agent.state.read': PermissionSpec('agent.state.read', PermissionLevel.install, '读取当前智能体状态'),
+  'agent.state.write': PermissionSpec('agent.state.write', PermissionLevel.install, '更新当前智能体状态'),
+  'memory.read': PermissionSpec('memory.read', PermissionLevel.install, '读取当前智能体的长期记忆'),
+  'memory.write': PermissionSpec('memory.write', PermissionLevel.install, '写入当前智能体的长期记忆'),
+  'ui.surface': PermissionSpec('ui.surface', PermissionLevel.install, '创建和更新插件 Surface'),
+
   'ui.overlay': PermissionSpec('ui.overlay', PermissionLevel.install, '在宿主界面上叠加覆盖层'),
 
   // ── 模型：消耗用户点数，安装弹窗必须提示 ──
@@ -248,6 +254,17 @@ const Map<String, String> _exactPrimitivePermissions = <String, String>{
   'screen.capture': 'screen.capture',
   'screen.analyze': 'screen.capture',
   'screen.record': 'screen.record',
+
+  // 智能体状态与记忆
+  'agent.state.get': 'agent.state.read',
+  'agent.state.set': 'agent.state.write',
+  'agent.greet': 'agent.state.write',
+  'agent.model.chat': 'model.chat',
+  'memory.list': 'memory.read',
+  'memory.add': 'memory.write',
+  'surface.open': 'ui.surface',
+  'surface.update': 'ui.surface',
+  'surface.close': 'ui.surface',
 };
 
 /// 域名 → 默认权限。适用于「整个域共用同一个权限」的情况。
@@ -265,6 +282,8 @@ const Map<String, String> _domainDefaultPermissions = <String, String>{
   // 而 'chat' 不在权限目录里 → 门禁判「未知权限」直接拒。
   // 表现是插件调 chat.lastMessage 必然失败，且看不出原因。
   'chat': 'chat.read',
+  'agent': 'agent.state.read',
+  'memory': 'memory.read',
 };
 
 /// 某原语（如 `sys.time`、`fs.read`）所需的权限名。

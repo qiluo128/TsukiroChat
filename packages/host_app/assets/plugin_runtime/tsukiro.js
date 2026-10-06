@@ -507,11 +507,15 @@
     list.forEach(function (name) {
       var parts = String(name).split('.');
       if (parts.length < 2) return;
-      var domain = parts[0];
-      var action = parts.slice(1).join('.');
-      if (!tsukiro[domain] || typeof tsukiro[domain] !== 'object') tsukiro[domain] = {};
-      if (typeof tsukiro[domain][action] === 'function') return;
-      tsukiro[domain][action] = function (params) { return call(name, params); };
+      var target = tsukiro;
+      for (var i = 0; i < parts.length - 1; i++) {
+        var part = parts[i];
+        if (!target[part] || typeof target[part] !== 'object') target[part] = {};
+        target = target[part];
+      }
+      var action = parts[parts.length - 1];
+      if (typeof target[action] === 'function') return;
+      target[action] = function (params) { return call(name, params); };
     });
   }
 

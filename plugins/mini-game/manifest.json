@@ -30,6 +30,21 @@
         "onClick": { "event": "game.open" }
       }
     ],
+    "surfaces": [
+      {
+        "id": "flame-demo",
+        "kind": "flame",
+        "slot": "agent.sections",
+        "gameType": "demo.surface",
+        "presentation": "embedded",
+        "minWidth": 320,
+        "minHeight": 180,
+        "maxWidth": 640,
+        "maxHeight": 360,
+        "capabilities": ["interaction", "animation"],
+        "permissions": ["ui"]
+      }
+    ],
     "pages": [
       {
         "id": "game",

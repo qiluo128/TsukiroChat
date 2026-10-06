@@ -19,18 +19,21 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:model_gateway/model_gateway.dart';
 import 'dart:convert';
 
 import 'package:plugin_core/plugin_core.dart';
 
+import '../data/models.dart';
 import '../data/repositories.dart';
+import '../services/utility_model.dart';
+import '../services/agent_context.dart';
+import 'app_keys.dart';
 
 /// 全局 messenger key。
 ///
 /// [HostUi.toast] 是在 widget 树之外被调用的（可能来自 WebView 的回调），
 /// 拿不到 `BuildContext`，只能靠这个全局入口弹提示。
-final GlobalKey<ScaffoldMessengerState> appMessengerKey =
-    GlobalKey<ScaffoldMessengerState>();
 
 // ═══════════════════════════ 时钟 ═══════════════════════════
 
@@ -147,8 +150,9 @@ class AppHostUi implements HostUi {
     String? content,
     List<UiButton> buttons = const <UiButton>[],
   }) async {
-    final context = appMessengerKey.currentContext;
-    if (context == null) return null;
+    final navigator = appNavigatorKey.currentState;
+    final context = appNavigatorKey.currentContext;
+    if (navigator == null || context == null) return null;
 
     // 插件没给按钮时给一个"知道了"，否则对话框关不掉
     final effective = buttons.isEmpty
@@ -182,9 +186,9 @@ class AppHostUi implements HostUi {
 
   @override
   Future<void> close() async {
-    final context = appMessengerKey.currentContext;
-    if (context != null && Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
+    final navigator = appNavigatorKey.currentState;
+    if (navigator != null && navigator.canPop()) {
+      navigator.pop();
     }
   }
 
@@ -233,6 +237,9 @@ class AppChatContext implements HostChatContext {
 
   final Future<Repos> repos;
 
+  /// 当前打开的智能体/对话，由宿主页面维护。
+  String? activeAgentId;
+
   /// 当前打开的对话 id。聊天页负责维护。
   @override
   String? activeConversationId;
@@ -259,6 +266,210 @@ class AppChatContext implements HostChatContext {
       };
     }
     return null;
+  }
+}
+
+// ═══════════════════════════ 智能体状态与记忆 ═══════════════════════════
+
+class AppAgentState implements HostAgentState {
+  AppAgentState({required this.repos, required this.chat, required this.utility, required this.agentGateway, this.surfaceController});
+
+  final Future<Repos> repos;
+  final AppChatContext chat;
+  final UtilityModelService utility;
+  final HttpModelGateway? Function(String agentId) agentGateway;
+  final HostSurfaceController? surfaceController;
+
+
+  @override
+  String? get activeAgentId => chat.activeAgentId;
+
+  @override
+  String? get activeConversationId => chat.activeConversationId;
+
+  String _stateKey(String pluginId) => 'plugin.agent_state.$pluginId.${chat.activeAgentId}';
+
+  Future<void> _requireContext() async {
+    if (chat.activeAgentId == null || chat.activeAgentId!.isEmpty) {
+      throw StateError('当前不在智能体页面');
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> getState(String pluginId) async {
+    await _requireContext();
+    final raw = await (await repos).settings.get(_stateKey(pluginId));
+    if (raw == null || raw.isEmpty) return <String, dynamic>{'mood': 50, 'opinion': '还在了解中'};
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    } catch (_) {
+      return <String, dynamic>{};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> setState(String pluginId, Map<String, dynamic> patch) async {
+    await _requireContext();
+    final current = await getState(pluginId);
+    final next = <String, dynamic>{...current};
+    if (patch.containsKey('mood')) {
+      final mood = (patch['mood'] as num?)?.toInt();
+      if (mood != null) next['mood'] = mood.clamp(0, 100);
+    }
+    if (patch.containsKey('opinion')) next['opinion'] = '${patch['opinion']}'.trim();
+    if (patch.containsKey('lastGreeting')) next['lastGreeting'] = '${patch['lastGreeting']}';
+    await (await repos).settings.set(_stateKey(pluginId), jsonEncode(next));
+    return next;
+  }
+
+  @override
+  Future<String> greet(String pluginId) async {
+    await _requireContext();
+    final agent = await (await repos).agents.get(chat.activeAgentId!);
+    if (agent == null) throw StateError('当前智能体不存在');
+    final state = await getState(pluginId);
+    final prompt = '用户刚刚向你打招呼。请结合你的角色设定和当前状态，简短回应一句自然的话。'
+        '\n角色设定：${agent.persona.buildSystemPrompt()}'
+        '\n当前心情：${state['mood']} / 100；你对用户的看法：${state['opinion']}';
+    final gateway = agentGateway(chat.activeAgentId!);
+    if (gateway == null) throw StateError('当前智能体没有可用模型');
+    final taskMessages = <ChatMessage>[
+      ChatMessage.system('只输出自然的简短回应。'),
+      ChatMessage.user(prompt),
+    ];
+    final messages = await AgentContextBuilder(await repos).messages(
+      agent,
+      taskMessages,
+      conversationId: chat.activeConversationId,
+    );
+    final reply = await gateway.complete(ModelRequest(
+      messages: messages,
+      maxTokens: 120,
+    ));
+    if (reply.text.trim().isEmpty) {
+      throw StateError('当前智能体模型返回了空内容');
+    }
+    final replyText = reply.text.trim();
+    final next = await setState(pluginId, <String, dynamic>{
+      'lastGreeting': replyText,
+      'mood': ((state['mood'] as num?)?.toInt() ?? 50) + 2,
+      'opinion': '愿意主动打招呼，关系正在变熟',
+    });
+    await addMemory(pluginId,
+        content: '用户主动向我打招呼，我回应：“$replyText”',
+        kind: 'greeting',
+        metadata: <String, dynamic>{'state': next});
+    return reply.text.trim();
+  }
+
+  @override
+  Future<Map<String, dynamic>> modelChat(
+    String pluginId,
+    List<Map<String, dynamic>> messages,
+  ) async {
+    await _requireContext();
+    final gateway = agentGateway(chat.activeAgentId!);
+    if (gateway == null) throw StateError('当前智能体没有可用模型');
+    final taskMessages = messages
+        .map((message) => ChatMessage(
+              role: ChatRole.parse(message['role']?.toString()),
+              content: message['content']?.toString(),
+            ))
+        .toList(growable: false);
+    final agent = await (await repos).agents.get(chat.activeAgentId!);
+    if (agent == null) throw StateError('当前智能体不存在');
+    final contextualMessages = await AgentContextBuilder(await repos).messages(
+      agent,
+      taskMessages,
+      conversationId: chat.activeConversationId,
+    );
+    final reply = await gateway.complete(ModelRequest(messages: contextualMessages));
+    return <String, dynamic>{'text': reply.text, 'model': gateway.activeModel};
+  }
+
+  @override
+  Future<String> appendAssistantMessage(String pluginId, String content) async {
+    await _requireContext();
+    final conversationId = chat.activeConversationId;
+    if (conversationId == null || conversationId.isEmpty) {
+      throw StateError('当前不在对话中，无法追加评价');
+    }
+    final reposValue = await repos;
+    final id = newId('m');
+    final seq = await reposValue.messages.nextSeq(conversationId);
+    await reposValue.messages.insert(StoredChatMessage(
+      id: id,
+      conversationId: conversationId,
+      role: ChatRole.assistant,
+      content: content.trim(),
+      seq: seq,
+      createdAt: DateTime.now(),
+      metadata: <String, dynamic>{'pluginId': pluginId, 'kind': 'plugin_evaluation'},
+    ));
+    return id;
+  }
+
+  @override
+  Future<bool> openSurface(String pluginId, String surfaceId) async {
+    await _requireContext();
+    return surfaceController?.open(pluginId, surfaceId) ?? false;
+  }
+
+  @override
+  Future<bool> updateSurface(String pluginId, String surfaceId, Map<String, dynamic> state) async {
+    await _requireContext();
+    return surfaceController?.update(pluginId, surfaceId, state) ?? false;
+  }
+
+  @override
+  Future<bool> closeSurface(String pluginId, String surfaceId) async =>
+      surfaceController?.close(pluginId, surfaceId) ?? false;
+
+  @override
+  Future<bool> surfaceEvent(String pluginId, String surfaceId, Map<String, dynamic> event) async =>
+      surfaceController?.event(pluginId, surfaceId, event) ?? false;
+
+  @override
+  Future<Map<String, dynamic>?> surfaceState(String pluginId, String surfaceId) async => null;
+
+  @override
+  Future<List<Map<String, dynamic>>> listMemories(
+    String pluginId, {
+    String? keyword,
+    int limit = 20,
+  }) async {
+    await _requireContext();
+    final entries = keyword == null || keyword.trim().isEmpty
+        ? await (await repos).memories.listFor(chat.activeAgentId!, limit: limit.clamp(1, 50))
+        : await (await repos).memories.search(chat.activeAgentId!, keyword, limit: limit.clamp(1, 50));
+    return entries
+        .where((e) => e.metadata['pluginId'] == pluginId)
+        .map((e) => <String, dynamic>{'id': e.id, 'content': e.content, 'type': e.type.name})
+        .toList(growable: false);
+  }
+
+  @override
+  Future<String> addMemory(
+    String pluginId, {
+    required String content,
+    String kind = 'custom',
+    Map<String, dynamic>? metadata,
+  }) async {
+    await _requireContext();
+    final safe = content.trim();
+    if (safe.isEmpty || safe.length > 2000) throw StateError('记忆内容长度必须为 1–2000 字符');
+    final entry = MemoryEntry(
+      id: newId('memory'),
+      agentId: chat.activeAgentId!,
+      conversationId: null,
+      type: MemoryType.custom,
+      content: safe,
+      createdAt: DateTime.now(),
+      metadata: <String, dynamic>{'pluginId': pluginId, 'kind': kind, ...?metadata},
+    );
+    await (await repos).memories.add(entry);
+    return entry.id;
   }
 }
 

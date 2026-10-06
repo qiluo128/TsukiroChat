@@ -18,6 +18,7 @@ import 'package:plugin_core/plugin_core.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../providers/plugin_providers.dart';
+import '../plugin/plugin_host.dart';
 import '../theme/app_theme.dart';
 
 /// 一个插槽位。
@@ -64,14 +65,18 @@ class PluginSlot extends ConsumerWidget {
     ];
 
     if (axis == Axis.horizontal) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          for (var i = 0; i < children.length; i++) ...<Widget>[
-            if (i > 0) const SizedBox(width: 6),
-            children[i],
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (var i = 0; i < children.length; i++) ...<Widget>[
+              if (i > 0) const SizedBox(width: 6),
+              children[i],
+            ],
           ],
-        ],
+        ),
       );
     }
 
@@ -118,13 +123,7 @@ class _DeclarationWidgetState extends State<_DeclarationWidget> {
             : Divider(height: 20, color: t.divider);
 
       case 'text':
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(
-            decl.label ?? '',
-            style: TextStyle(fontSize: 12.5, color: t.textMuted),
-          ),
-        );
+        return _buildText(context, decl);
 
       case 'button':
         return _buildButton(context, decl, pluginId);
@@ -228,6 +227,50 @@ class _DeclarationWidgetState extends State<_DeclarationWidget> {
         // 在旧宿主上只是不显示，而不是报错
         return const SizedBox.shrink();
     }
+  }
+
+  Widget _buildText(BuildContext context, UiDeclaration decl) {
+    final t = context.tokens;
+    final binding = decl.binding;
+    if (binding == null || binding.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(decl.label ?? '', style: TextStyle(fontSize: 12.5, color: t.textMuted)),
+      );
+    }
+
+    final host = widget.host as PluginHost;
+    final state = host.agentState;
+    return FutureBuilder<Map<String, dynamic>>(
+      future: state?.getState(widget.registered.pluginId) ??
+          Future<Map<String, dynamic>>.value(const <String, dynamic>{}),
+      builder: (context, snapshot) {
+        final data = snapshot.hasError
+            ? const <String, dynamic>{'mood': 50, 'opinion': '还在了解中'}
+            : (snapshot.data ?? const <String, dynamic>{'mood': 50, 'opinion': '还在了解中'});
+        final value = _bindingValue(data, binding);
+        final text = value == null ? '${decl.label ?? ''}：读取中…' : '${decl.label ?? ''}：$value';
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(text, style: TextStyle(fontSize: 12.5, color: t.textMuted)),
+        );
+      },
+    );
+  }
+
+  Object? _bindingValue(Map<String, dynamic> state, String binding) {
+    final parts = binding.split('.');
+    if (parts.length < 2) return null;
+    final key = parts[1];
+    final raw = state[key];
+    if (key == 'mood' && parts.length > 2 && parts[2] == 'label') {
+      final mood = (raw as num?)?.toInt() ?? 50;
+      if (mood >= 80) return '很好（$mood/100）';
+      if (mood >= 60) return '不错（$mood/100）';
+      if (mood >= 40) return '平静（$mood/100）';
+      return '低落（$mood/100）';
+    }
+    return raw;
   }
 
   Widget _buildButton(BuildContext context, UiDeclaration decl, String pluginId) {

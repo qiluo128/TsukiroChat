@@ -40,7 +40,17 @@ tsukiro.event.on('status.time_clicked', async () => {
 });
 
 tsukiro.event.on('status.greet', async () => {
-  await tsukiro.ui.toast({ text: '你好，我是状态面板插件。' });
+  try {
+    const result = await tsukiro.agent.greet({});
+    const text = result && (result.text || result.result || result);
+    await tsukiro.ui.dialog({
+      title: 'AI 的回应',
+      content: String(text || '……'),
+      buttons: [{ id: 'ok', label: '知道了' }],
+    });
+  } catch (e) {
+    await tsukiro.ui.toast({ text: '打招呼失败：' + (e.message || e) });
+  }
 });
 
 // toggle 的事件名没写 onClick.event，所以走兜底的 ui.click

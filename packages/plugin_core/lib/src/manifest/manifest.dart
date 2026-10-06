@@ -9,6 +9,7 @@ library;
 
 import '../common/semver.dart';
 import '../permission/permission.dart';
+import 'surface.dart';
 import 'theme.dart';
 
 /// 作者信息。
@@ -161,6 +162,7 @@ class UiDeclaration {
     this.permissions = const <String>[],
     this.children = const <UiDeclaration>[],
     this.config,
+    this.binding,
   });
 
   final String slot;
@@ -188,6 +190,9 @@ class UiDeclaration {
 
   /// 绑定到 `config.schema` 的字段信息。
   final Map<String, dynamic>? config;
+
+  /// 受控宿主状态绑定，例如 `agent.mood.label`；只读展示。
+  final String? binding;
 
   @override
   String toString() => 'UiDeclaration($slot/$id:$type)';
@@ -234,13 +239,16 @@ class ProvidesSpec {
     this.tools = const <ToolDeclaration>[],
     this.ui = const <UiDeclaration>[],
     this.pages = const <PageDeclaration>[],
+    this.surfaces = const <SurfaceDeclaration>[],
     this.themes = const <ThemeDeclaration>[],
+
     this.rawReserved = const <String, dynamic>{},
   });
 
   final List<ToolDeclaration> tools;
   final List<UiDeclaration> ui;
   final List<PageDeclaration> pages;
+  final List<SurfaceDeclaration> surfaces;
 
   /// L1 美化包。**已校验为强类型** —— 令牌名一定在目录里，取值一定合法。
   final List<ThemeDeclaration> themes;

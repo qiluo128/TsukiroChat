@@ -3,7 +3,7 @@
   "id": "dev.tsukiro.status",
   "name": "状态面板",
   "version": "1.0.0",
-  "description": "演示插件的 UI 渲染：往聊天的工具栏、智能体的操作区、设置页塞控件，点击后调原语弹提示。",
+  "description": "显示 AI 当前心情与对用户的看法，支持 AI 打招呼并记住这次互动。",
   "author": {
     "name": "Tsukiro",
     "url": "https://github.com/tsukiro-chat"
@@ -20,14 +20,11 @@
   },
 
   "permissions": [
-    {
-      "name": "sys.time",
-      "reason": "点「现在几点」时读取系统时间"
-    },
-    {
-      "name": "ui",
-      "reason": "弹提示告诉用户结果"
-    }
+    { "name": "sys.time", "reason": "点「现在几点」时读取系统时间" },
+    { "name": "ui", "reason": "显示状态与 AI 打招呼结果" },
+    { "name": "agent.state.read", "reason": "显示当前 AI 心情与对用户看法" },
+    { "name": "agent.state.write", "reason": "更新心情并执行 AI 打招呼" },
+    { "name": "memory.write", "reason": "让 AI 记住这次打招呼" }
   ],
 
   "provides": {
@@ -93,9 +90,25 @@
         "children": [
           {
             "slot": "agent.sections",
+            "id": "mood",
+            "type": "text",
+            "label": "AI 心情",
+            "binding": "agent.mood.label",
+            "permissions": ["agent.state.read"]
+          },
+          {
+            "slot": "agent.sections",
+            "id": "opinion",
+            "type": "text",
+            "label": "对你的看法",
+            "binding": "agent.opinion",
+            "permissions": ["agent.state.read"]
+          },
+          {
+            "slot": "agent.sections",
             "id": "hint",
             "type": "text",
-            "label": "这是一个插件渲染的区块，控件都是原生 Flutter 控件。"
+            "label": "状态由插件保存，打招呼不会写入普通对话记录。"
           },
           {
             "slot": "agent.sections",

@@ -54,6 +54,7 @@ void main() {
   late Repos repos;
 
   setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   });
@@ -126,6 +127,44 @@ void main() {
       // 主题声明进的是主题表，不是插槽表；这里主要验证注册没抛异常
       expect(host.plugins, hasLength(1));
     });
+  });
+
+  test('停用再启用插件会恢复声明注册', () async {
+    final host = makeHost(repos.settings);
+    await _scanInto(host, pluginsRoot);
+    await writePlugin(pluginsRoot, 'dev.test.toggle');
+    await host.debugScanDirectory(pluginsRoot.path);
+    await host.setEnabled('dev.test.toggle', false);
+    expect(host.gatekeeper.isRegistered('dev.test.toggle'), isFalse);
+    await host.setEnabled('dev.test.toggle', true);
+    expect(host.gatekeeper.isRegistered('dev.test.toggle'), isTrue);
+  });
+
+  test('安装 RPS 会复制 WebView 页面资源', () async {
+    final host = makeHost(repos.settings);
+    await _scanInto(host, pluginsRoot);
+
+    await host.installFromAssets('assets/demo_plugins/rock-paper-scissors');
+
+    expect(
+      File('${pluginsRoot.path}/dev.tsukiro.rock-paper-scissors/pages/web.html').existsSync(),
+      isTrue,
+    );
+    expect(host.surfaceRegistry.find('dev.tsukiro.rock-paper-scissors', 'web-game'), isNotNull);
+  });
+
+  test('重复安装内置主题插件不会重复注册或留下旧目录', () async {
+    final host = makeHost(repos.settings);
+    await _scanInto(host, pluginsRoot);
+
+    await host.installFromAssets('assets/demo_plugins/sakura-theme');
+    await host.installFromAssets('assets/demo_plugins/sakura-theme');
+
+    expect(host.plugins, hasLength(1));
+    expect(host.plugins.single.id, 'dev.tsukiro.sakura-theme');
+    expect(host.availableThemes(), hasLength(1));
+    expect(host.gatekeeper.isRegistered('dev.tsukiro.sakura-theme'), isTrue);
+    expect(Directory('${pluginsRoot.path}/dev.tsukiro.sakura-theme').existsSync(), isTrue);
   });
 }
 

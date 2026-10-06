@@ -23,6 +23,7 @@ class PluginBundle {
     required this.handlerSources,
     required this.slotSources,
     this.assets = const <String, String>{},
+    this.pageSources = const <String, String>{},
   });
 
   final PluginManifest manifest;
@@ -38,6 +39,9 @@ class PluginBundle {
 
   /// 插件目录下的静态资源（路径 → 文本内容）。目前只用于图标。
   final Map<String, String> assets;
+
+  /// 页面/Surface entry 文件的源码，路径相对于插件根目录。
+  final Map<String, String> pageSources;
 }
 
 /// 加载失败。
@@ -72,6 +76,7 @@ Future<PluginBundle> loadBundleFromDirectory(String directory) async {
       entrySource: '',
       handlerSources: const <String, String>{},
       slotSources: const <String, String>{},
+      pageSources: const <String, String>{},
     );
   }
 
@@ -81,6 +86,15 @@ Future<PluginBundle> loadBundleFromDirectory(String directory) async {
       throw PluginLoadException('清单里声明了 $relative，但文件不存在');
     }
     return file.readAsString();
+  }
+
+  final pageSources = <String, String>{};
+  final pageEntries = <String>{
+    ...manifest.provides.pages.map((page) => page.entry),
+    ...manifest.provides.surfaces.map((surface) => surface.entry).whereType<String>(),
+  };
+  for (final entry in pageEntries) {
+    pageSources[entry] = await read(entry);
   }
 
   final handlers = <String, String>{};
@@ -101,6 +115,7 @@ Future<PluginBundle> loadBundleFromDirectory(String directory) async {
     entrySource: await read(runtime.main),
     handlerSources: handlers,
     slotSources: const <String, String>{},
+    pageSources: pageSources,
   );
 }
 
@@ -120,7 +135,17 @@ Future<PluginBundle> loadBundleFromAssets(String assetDir) async {
       entrySource: '',
       handlerSources: const <String, String>{},
       slotSources: const <String, String>{},
+      pageSources: const <String, String>{},
     );
+  }
+
+  final pageSources = <String, String>{};
+  final pageEntries = <String>{
+    ...manifest.provides.pages.map((page) => page.entry),
+    ...manifest.provides.surfaces.map((surface) => surface.entry).whereType<String>(),
+  };
+  for (final entry in pageEntries) {
+    pageSources[entry] = await rootBundle.loadString('$assetDir/$entry');
   }
 
   final handlers = <String, String>{};
@@ -133,6 +158,7 @@ Future<PluginBundle> loadBundleFromAssets(String assetDir) async {
     entrySource: await rootBundle.loadString('$assetDir/${runtime.main}'),
     handlerSources: handlers,
     slotSources: const <String, String>{},
+    pageSources: pageSources,
   );
 }
 

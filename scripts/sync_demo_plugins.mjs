@@ -32,7 +32,7 @@ const DEST = 'packages/host_app/assets/demo_plugins';
 const PUBSPEC = 'packages/host_app/pubspec.yaml';
 
 /** 只同步这些插件（全同步会让 APK 变大，而且不是每个都适合演示）。 */
-const INCLUDE = ['time-plugin', 'translate-button', 'sakura-theme', 'status-panel'];
+const INCLUDE = ['time-plugin', 'translate-button', 'sakura-theme', 'status-panel', 'mini-game', 'rock-paper-scissors'];
 
 const MARK_START = '    # >>> demo_plugins (由 scripts/sync_demo_plugins.mjs 生成，勿手改)';
 const MARK_END = '    # <<< demo_plugins';
@@ -114,8 +114,7 @@ const dirs = [];
 let total = 0;
 for (const name of INCLUDE) {
   if (!available.includes(name)) {
-    console.log(`  ! ${name} 不存在，跳过`);
-    continue;
+    throw new Error(`演示插件源目录缺失：${name}。拒绝生成不完整的 assets/pubspec。`);
   }
   const r = copyDir(path.join(SRC, name), path.join(DEST, name), dirs);
   console.log(`  ✓ ${name.padEnd(20)} ${r.count} 个文件`);

@@ -410,22 +410,55 @@ void main() {
     });
   });
 
+  group('⑦ 石头剪刀布双入口插件', () {
+    test('manifest 声明 WebView 和 Flame 两个入口及必要权限', () {
+      final root = repoRoot();
+      final dir = Directory(p.join(root.path, 'plugins', 'rock-paper-scissors'));
+      final parsed = parseManifestJson(File(p.join(dir.path, 'manifest.json')).readAsStringSync());
+      expect(parsed.isValid, isTrue, reason: parsed.issues.toString());
+      final manifest = parsed.manifest!;
+      expect(manifest.ui.map((item) => item.id), containsAll(<String>['rps-web', 'rps-flame']));
+      expect(manifest.provides.surfaces.map((item) => item.kind), containsAll(<SurfaceKind>[SurfaceKind.web, SurfaceKind.flame]));
+      expect(manifest.permissionNames, containsAll(<String>['model.chat', 'memory.write', 'message.write']));
+    });
+
+    test('RPS 规则在插件 JS，Flame/WebView 只接收 Surface 状态', () {
+      final root = repoRoot();
+      final dir = Directory(p.join(root.path, 'plugins', 'rock-paper-scissors'));
+      final code = File(p.join(dir.path, 'index.js')).readAsStringSync();
+      expect(code, contains("tsukiro.surface.update"));
+      expect(code, contains("tsukiro.agent.model.chat"));
+      expect(code, contains("tsukiro.memory.add"));
+      expect(code, contains("tsukiro.message.append"));
+      expect(code, isNot(contains('messages.insert')));
+    });
+  });
+
   group('⑤ 控件事件名与插件实现一致（用户反馈：点了没反应）', () {
-    test('translate-button 声明的事件名在它的 index.js 里有监听', () {
-      final src = Directory(p.join(repoRoot().path, 'plugins', 'translate-button'));
+    test('translate-button 源码和 APK 资源副本都监听声明事件', () {
+      final root = repoRoot();
+      final sourceDir = Directory(p.join(root.path, 'plugins', 'translate-button'));
+      final assetDir = Directory(
+        p.join(root.path, 'packages', 'host_app', 'assets', 'demo_plugins', 'translate-button'),
+      );
       final manifest = parseManifestJson(
-        File(p.join(src.path, 'manifest.json')).readAsStringSync(),
+        File(p.join(sourceDir.path, 'manifest.json')).readAsStringSync(),
       );
       expect(manifest.isValid, isTrue);
-      final code = File(p.join(src.path, 'index.js')).readAsStringSync();
+      expect(manifest.manifest!.permissions.map((p) => p.name), contains('sys.clipboard.write'));
 
-      for (final ui in manifest.manifest!.provides.ui) {
-        final event = ui.onClickEvent ?? 'ui.click';
-        expect(
-          code.contains("tsukiro.event.on('$event'"),
-          isTrue,
-          reason: '清单声明点击发 $event，但 index.js 里没有监听它 —— 点了会毫无反应',
-        );
+      for (final dir in <Directory>[sourceDir, assetDir]) {
+        final code = File(p.join(dir.path, 'index.js')).readAsStringSync();
+        for (final ui in manifest.manifest!.provides.ui) {
+          final event = ui.onClickEvent ?? 'ui.click';
+          expect(
+            code.contains("tsukiro.event.on('$event'"),
+            isTrue,
+            reason: '${dir.path} 声明点击发 $event，但 index.js 里没有监听它 —— 点了会毫无反应',
+          );
+        }
+        expect(code, contains('choice.clicked ?? choice.buttonId'));
+        expect(code, contains('复制失败'));
       }
     });
 

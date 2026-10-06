@@ -161,6 +161,15 @@ final List<_E> _entries = <_E>[
         'additionalProperties': false,
       }),
   _E('chat.info', '取当前对话的元信息（标题、条数）', permission: 'chat.read'),
+  _E('agent.state.get', '读取当前智能体状态', permission: 'agent.state.read'),
+  _E('agent.state.set', '更新当前智能体状态', permission: 'agent.state.write'),
+  _E('agent.greet', '让当前智能体回应一次问候并记住这次互动', permission: 'agent.state.write'),
+  _E('agent.model.chat', '使用当前智能体模型生成文本', permission: 'model.chat'),
+  _E('surface.open', '打开插件 Surface', permission: 'ui.surface'),
+  _E('surface.update', '更新插件 Surface 状态', permission: 'ui.surface'),
+  _E('surface.close', '关闭插件 Surface', permission: 'ui.surface'),
+  _E('memory.list', '读取当前智能体长期记忆', permission: 'memory.read'),
+  _E('memory.add', '写入当前智能体长期记忆', permission: 'memory.write'),
 
   // ───────────────────── 插件配置 ─────────────────────
   //

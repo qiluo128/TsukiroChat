@@ -75,9 +75,14 @@ async function handleTranslate() {
     ],
   });
 
-  if (choice.buttonId === 'copy') {
-    await tsukiro.sys.clipboard.write({ text: translated });
-    await tsukiro.ui.toast({ text: '已复制到剪贴板' });
+  const button = choice && (choice.clicked ?? choice.buttonId);
+  if (button === 'copy') {
+    try {
+      await tsukiro.sys.clipboard.write({ text: translated });
+      await tsukiro.ui.toast({ text: '已复制到剪贴板' });
+    } catch (err) {
+      await tsukiro.ui.toast({ text: '复制失败：' + (err.message || err) });
+    }
   }
 }
 

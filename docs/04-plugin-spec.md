@@ -208,7 +208,25 @@ time-plugin-1.0.0.zip
 | `isStreaming` | bool | 模型是否正在输出 |
 | `hasApiKey` | bool | 是否已配置可用模型（插件无法读取 Key 本身） |
 
-### 2.4 `provides.pages` —— 独立页面（L3）
+### 2.4 `provides.surfaces` —— Interactive Web / Trusted Flame Surface
+
+Surface 是页面和复杂 UI 的统一声明。`kind: web` 表示插件自带 HTML/CSS/JS；`kind: flame` 表示宿主从受信任 factory 创建 FlameGame。普通插件包不能携带 Dart、Flutter snapshot 或 native runtime。
+
+```jsonc
+"surfaces": [{
+  "id": "game",
+  "kind": "flame",
+  "slot": "agent.sections",
+  "gameType": "demo.guess_number",
+  "presentation": "fullscreen",
+  "capabilities": ["interaction", "animation"],
+  "permissions": ["ui", "model.chat"]
+}]
+```
+
+Surface capability 只是 UI 能力，不自动授予系统权限。拖拽文件、网络、模型、剪贴板仍需独立 permissions。Surface 消息绑定 `instanceId`/`surfaceId`，重装、停用或卸载后旧实例必须失效。
+
+### 2.5 `provides.pages` —— 独立页面（L3）
 
 插件自带 HTML，宿主 WebView 容器打开。**这是唯一允许插件自定义外观的形态。**
 

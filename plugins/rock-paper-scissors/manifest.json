@@ -1,0 +1,71 @@
+{
+  "manifestVersion": 1,
+  "id": "dev.tsukiro.rock-paper-scissors",
+  "name": "石头剪刀布",
+  "version": "1.0.0",
+  "description": "使用 WebView 或 Flame 与当前智能体玩石头剪刀布。",
+  "author": { "name": "Tsukiro" },
+  "license": "MIT",
+  "minHostVersion": "0.1.0",
+  "hostApi": "^1.0.0",
+  "runtime": { "main": "index.js", "type": "module", "autoStart": true },
+  "permissions": [
+    { "name": "ui", "reason": "打开游戏 Surface 并显示评价" },
+    { "name": "ui.surface", "reason": "创建游戏 Surface" },
+    { "name": "model.chat", "reason": "让当前智能体出拳并评价游戏" },
+    { "name": "memory.write", "reason": "记住这次游戏摘要" },
+    { "name": "message.write", "reason": "把游戏结束评价追加到当前对话" }
+  ],
+  "provides": {
+    "ui": [
+      {
+        "slot": "chat.toolbar",
+        "id": "rps-web",
+        "type": "button",
+        "label": "猜拳(Web)",
+        "icon": "lucide:hand",
+        "order": 40,
+        "onClick": { "event": "rps.open.web" },
+        "permissions": ["ui", "ui.surface"]
+      },
+      {
+        "slot": "chat.toolbar",
+        "id": "rps-flame",
+        "type": "button",
+        "label": "猜拳(Flame)",
+        "icon": "lucide:gamepad-2",
+        "order": 41,
+        "onClick": { "event": "rps.open.flame" },
+        "permissions": ["ui", "ui.surface"]
+      }
+    ],
+    "surfaces": [
+      {
+        "id": "web-game",
+        "kind": "web",
+        "slot": "chat.toolbar",
+        "entry": "pages/web.html",
+        "presentation": "window",
+        "minWidth": 320,
+        "minHeight": 520,
+        "maxWidth": 640,
+        "maxHeight": 900,
+        "capabilities": ["interaction", "animation", "richText"],
+        "permissions": ["ui.surface", "model.chat", "memory.write", "message.write"]
+      },
+      {
+        "id": "flame-game",
+        "kind": "flame",
+        "slot": "chat.toolbar",
+        "gameType": "plugin.scene",
+        "presentation": "window",
+        "minWidth": 320,
+        "minHeight": 420,
+        "maxWidth": 640,
+        "maxHeight": 760,
+        "capabilities": ["interaction", "animation"],
+        "permissions": ["ui.surface", "model.chat", "memory.write", "message.write"]
+      }
+    ]
+  }
+}

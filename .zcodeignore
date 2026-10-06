@@ -64,5 +64,33 @@ packages/host_app/assets/dev-config.json
 # ── 演示插件（由 scripts/sync_demo_plugins.mjs 从 plugins/ 复制） ──
 # 单一事实来源是仓库根的 plugins/，这里那份是构建产物
 packages/host_app/assets/demo_plugins/
-# ── 其他 AI 工具链的会话状态（不是项目内容） ──
-.zcode/
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+bower_components/
+jspm_packages/
+__pycache__/
+site-packages/
+venv/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

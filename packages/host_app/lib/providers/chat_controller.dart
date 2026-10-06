@@ -11,6 +11,7 @@ import 'package:plugin_core/plugin_core.dart';
 import '../data/models.dart';
 import '../data/repositories.dart';
 import '../services/utility_model.dart';
+import '../services/agent_context.dart';
 import 'app_providers.dart';
 import 'plugin_providers.dart';
 
@@ -146,7 +147,10 @@ class ChatController {
                 ),
         // 人设可能为空 —— AgentLoop 在空串时**不注入 system 消息**，
         // 而不是替用户塞一句"你是一个助手"（见 docs/18 §6）
-        persona: agent.persona.buildSystemPrompt(),
+        persona: await AgentContextBuilder(repos).systemPrompt(
+          agent,
+          conversationId: conversationId,
+        ),
         maxSteps: 4,
         streamingCall: gateway.completeStreamingForLoop,
       );

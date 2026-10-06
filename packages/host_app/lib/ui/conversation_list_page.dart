@@ -11,6 +11,7 @@ import 'package:plugin_core/plugin_core.dart' show ChatRole;
 
 import '../data/models.dart';
 import '../providers/app_providers.dart';
+import '../providers/plugin_providers.dart';
 import '../theme/app_theme.dart';
 import 'agent_edit_page.dart';
 import 'chat_page.dart';
@@ -30,7 +31,16 @@ class _ConversationListPageState extends ConsumerState<ConversationListPage>
   late final TabController _tabs = TabController(length: 2, vsync: this);
 
   @override
+  void initState() {
+    super.initState();
+    // 先同步绑定上下文，避免首帧插件按钮可点击但 activeAgentId 仍为空。
+    ref.read(chatContextProvider).activeAgentId = widget.agentId;
+  }
+
+  @override
   void dispose() {
+    final context = ref.read(chatContextProvider);
+    if (context.activeAgentId == widget.agentId) context.activeAgentId = null;
     _tabs.dispose();
     super.dispose();
   }

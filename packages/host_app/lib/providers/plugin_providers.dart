@@ -9,24 +9,30 @@
 /// 工具表里」「门禁不知道这个插件」这类问题，而且表现为静默失效。
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
 
 import '../plugin/host_services_impl.dart';
 import '../services/utility_model.dart';
 import '../plugin/plugin_host.dart';
+import '../plugin/surface_controller.dart';
+import '../plugin/app_keys.dart';
 import 'app_providers.dart';
 
-/// 已安装的演示插件（首次启动自动装）。
+/// 已安装的演示插件（首次启动和版本迁移时增量安装）。
 ///
-/// 只带三个轻量的：时间插件（演示工具调用）、翻译按钮（演示 UI 插槽）、
-/// 樱花主题（演示零代码插件）。mini-game 太大且需要更多原语，先不装。
+/// 这是构建包中的完整演示集合；新增插件时同步提高 [demoTemplateSetVersion]。
 const List<String> demoTemplatePlugins = <String>[
   'assets/demo_plugins/time-plugin',
   'assets/demo_plugins/translate-button',
   'assets/demo_plugins/sakura-theme',
   'assets/demo_plugins/status-panel',
+  'assets/demo_plugins/mini-game',
+  'assets/demo_plugins/rock-paper-scissors',
 ];
+
+const int demoTemplateSetVersion = 2;
 
 /// 原语注册表。
 ///
@@ -41,6 +47,9 @@ const List<String> demoTemplatePlugins = <String>[
 final chatContextProvider = Provider<AppChatContext>(
   (ref) => AppChatContext(repos: ref.watch(reposProvider.future)),
 );
+
+final surfaceControllerProvider = Provider<PluginSurfaceController>((ref) =>
+    PluginSurfaceController(navigatorKey: appNavigatorKey));
 
 final primitiveRegistryProvider = Provider<PrimitiveRegistry>((ref) {
   // 先建一个**可变的服务表**，再把它交给注册表 ——
@@ -66,6 +75,13 @@ final primitiveRegistryProvider = Provider<PrimitiveRegistry>((ref) {
     ..put<PrimitiveRegistry>(registry)
     ..put<HookBus>(ref.watch(hookBusProvider))
     ..put<HostChatContext>(ref.watch(chatContextProvider))
+    ..put<HostAgentState>(AppAgentState(
+      repos: ref.watch(reposProvider.future),
+      chat: ref.watch(chatContextProvider),
+      utility: ref.watch(utilityModelServiceProvider),
+      agentGateway: (agentId) => ref.read(gatewayForAgentProvider(agentId)),
+      surfaceController: ref.watch(surfaceControllerProvider),
+    ))
     ..put<HostPluginConfig>(AppPluginConfig(repos: ref.watch(reposProvider.future)));
 
   // model.chat 用的模型网关。
@@ -89,6 +105,7 @@ final auditSinkProvider = Provider<AuditSink>((ref) => MemoryAuditSink());
 /// **必须是单例** —— 界面渲染时查的是它，
 /// 如果界面拿的是另一个实例，插件 UI 永远显示不出来。
 final slotRegistryProvider = Provider<SlotRegistry>((ref) => SlotRegistry());
+final surfaceRegistryProvider = Provider<SurfaceRegistry>((ref) => SurfaceRegistry());
 
 /// 插件状态版本号。
 ///
@@ -107,6 +124,7 @@ final pluginHostProvider = FutureProvider<PluginHost>((ref) async {
   final gatekeeper = ref.watch(gatekeeperProvider);
   final primitives = ref.watch(primitiveRegistryProvider);
   final slots = ref.watch(slotRegistryProvider);
+  final surfaces = ref.watch(surfaceRegistryProvider);
   final audit = ref.watch(auditSinkProvider);
 
   final host = PluginHost(
@@ -114,6 +132,7 @@ final pluginHostProvider = FutureProvider<PluginHost>((ref) async {
     gatekeeper: gatekeeper,
     primitiveRegistry: primitives,
     slotRegistry: slots,
+    surfaceRegistry: surfaces,
     audit: audit,
     // 传仓储进去，启停状态才能持久化 ——
     // 否则每次重启都从清单的 autoStart 重读，用户关掉的插件会自己回来
@@ -127,6 +146,7 @@ final pluginHostProvider = FutureProvider<PluginHost>((ref) async {
   ref.onDispose(() => host.removeListener(bump));
 
   await host.initialize();
+  ref.read(surfaceControllerProvider).attachHost(host);
   await _installDemoPluginsIfFirstRun(ref, host);
 
   return host;
@@ -138,18 +158,28 @@ final pluginHostProvider = FutureProvider<PluginHost>((ref) async {
 /// 用户主动卸光了插件时，不该下次启动又给他装回来。
 Future<void> _installDemoPluginsIfFirstRun(Ref ref, PluginHost host) async {
   final repos = await ref.read(reposProvider.future);
-  if (await repos.settings.get('demoPluginsInstalled') == '1') return;
-
+  final previousVersion = int.tryParse(
+        await repos.settings.get('demoPluginsSetVersion') ?? '',
+      ) ?? 0;
+  if (previousVersion < demoTemplateSetVersion) {
+    // 新增演示插件时，旧版本的 suppressed 状态不能阻止首次补装。
+    await repos.settings.set('demoPluginsSetVersion', '$demoTemplateSetVersion');
+    await repos.settings.set('plugin.demo.suppressed.dev.tsukiro.rock-paper-scissors', '0');
+  }
+  var installedAny = false;
   for (final assetDir in demoTemplatePlugins) {
     try {
-      await host.installFromAssets(assetDir);
+      installedAny = await host.ensureFromAssets(assetDir) || installedAny;
     } catch (e) {
-      // 单个插件装不上不该影响其他插件，也不该拦住 App 启动
-      // ignore: avoid_print
-      print('[plugin] 安装演示插件 $assetDir 失败：$e');
+      // 单个插件装不上不该影响其他插件，也不该拦住 App 启动；
+      // 同时保留失败原因，插件页可以显示具体问题并支持重试。
+      host.installErrors[assetDir] = '$e';
+      debugPrint('[plugin] 增量安装演示插件 $assetDir 失败：$e');
     }
   }
-  await repos.settings.set('demoPluginsInstalled', '1');
+  if (installedAny || await repos.settings.get('demoPluginsInstalled') != '1') {
+    await repos.settings.set('demoPluginsInstalled', '1');
+  }
 }
 
 /// 已经就绪的插件宿主（界面用）。

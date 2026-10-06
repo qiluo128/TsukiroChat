@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/models.dart';
 import '../providers/app_providers.dart';
+import '../providers/plugin_providers.dart';
 import 'plugin_slot.dart';
 import '../theme/app_theme.dart';
 import 'settings/model_picker_page.dart';
@@ -22,6 +23,12 @@ class AgentEditPage extends ConsumerStatefulWidget {
 }
 
 class _AgentEditPageState extends ConsumerState<AgentEditPage> {
+  @override
+  void initState() {
+    super.initState();
+    ref.read(chatContextProvider).activeAgentId = widget.agentId;
+  }
+
   final _name = TextEditingController();
   final _prompt = TextEditingController();
   final _greeting = TextEditingController();
@@ -33,6 +40,8 @@ class _AgentEditPageState extends ConsumerState<AgentEditPage> {
 
   @override
   void dispose() {
+    final context = ref.read(chatContextProvider);
+    if (context.activeAgentId == widget.agentId) context.activeAgentId = null;
     _name.dispose();
     _prompt.dispose();
     _greeting.dispose();
@@ -177,7 +186,6 @@ class _AgentEditPageState extends ConsumerState<AgentEditPage> {
                   context: <String, dynamic>{'agentId': widget.agentId},
                 ),
               ),
-
               const SizedBox(height: 8),
               _SectionTitle('记忆'),
               SwitchListTile(

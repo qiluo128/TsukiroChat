@@ -12,6 +12,14 @@
 | **声明式插槽** | JSON 描述（`provides.ui`） | 原生渲染，统一风格 | 低（仅图标/文案/顺序） | **Demo** |
 | **独立页面** | 完整 HTML/JS | WebView 容器 + 标题栏 | 高 | **Demo** |
 | **覆盖层** | 完整 HTML/JS | 透明浮层容器 | 高 | 阶段 5 |
+| **Interactive Web Surface** | HTML/CSS/JS、富文本、拖拽、输入、动画 | 独立 WebView + CSP + Bridge | 高 | Surface 阶段 |
+| **Trusted Flame Surface** | manifest 选择 `gameType`，不上传 Dart | 宿主 FlameGame/GameWidget factory | 高 | Flame 阶段 |
+
+---
+
+## 1.1 Surface 与 Flame 边界
+
+L1 插槽控件仍由宿主渲染。需要拖拽、富文本、自定义输入或动画时，使用独立的 Interactive Web Surface；它拥有自己的 WebView/DOM，但只能通过 Bridge 调用宿主能力。Flame 使用 Trusted Surface：manifest 只选择宿主注册的 `gameType`，普通插件不得上传或执行 Dart/Flutter 代码。
 
 ---
 

@@ -457,6 +457,22 @@ node scripts\bench_mirrors.mjs 8          # 复现镜像测速
 
 ---
 
+## Flame / Surface 开发验证
+
+当前 Flame 仅作为 `host_app` 的受信任宿主依赖，普通插件包不能携带 Dart/Flutter/Flame 运行时代码。Surface manifest、SurfaceRegistry 和宿主 Flame factory 可在无网络条件下测试：
+
+```powershell
+cd packages\plugin_core
+..\..\scripts\dart.ps1 analyze
+..\..\scripts\dart.ps1 test test\surface_test.dart
+
+cd ..\host_app
+flutter analyze
+flutter test
+```
+
+Surface 测试应覆盖：manifest 的 `kind:web/flame`、`gameType`、能力与权限分离、插件停用/卸载清理、GameWidget 生命周期和未知 gameType 的 `UNSUPPORTED` 降级。真实模型测试不属于 Surface 回归测试，避免受中转站并发/限流影响。
+
 ## 变更记录
 
 | 日期 | 变更 |

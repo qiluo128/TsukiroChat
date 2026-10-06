@@ -296,6 +296,57 @@ abstract class HostScheduler {
 ///
 /// 要求插件自己传会话 id 会很难用：插件根本不知道宿主界面上开着哪个对话，
 /// 而且它在按钮被点的那一刻也拿不到。所以由宿主维护"当前对话"。
+abstract class HostSurfaceController {
+  Future<bool> open(String pluginId, String surfaceId);
+  Future<bool> update(String pluginId, String surfaceId, Map<String, dynamic> state);
+  Future<bool> close(String pluginId, String surfaceId);
+  Future<bool> event(String pluginId, String surfaceId, Map<String, dynamic> event);
+}
+
+/// 当前智能体与插件状态/记忆的受控宿主服务。
+///
+/// 插件不能传入任意 agentId 或 conversationId；宿主实现负责绑定当前界面上下文。
+abstract class HostAgentState {
+  String? get activeAgentId;
+  String? get activeConversationId;
+
+  Future<Map<String, dynamic>> getState(String pluginId);
+  Future<Map<String, dynamic>> setState(
+    String pluginId,
+    Map<String, dynamic> patch,
+  );
+
+  Future<String> greet(String pluginId);
+
+  /// 使用当前智能体配置的模型，不暴露凭据。
+  Future<Map<String, dynamic>> modelChat(
+    String pluginId,
+    List<Map<String, dynamic>> messages,
+  );
+
+  /// 只允许向当前对话追加 assistant 评价，不触发再次模型调用。
+  Future<String> appendAssistantMessage(String pluginId, String content);
+
+  Future<bool> openSurface(String pluginId, String surfaceId);
+  Future<bool> updateSurface(String pluginId, String surfaceId, Map<String, dynamic> state);
+  Future<bool> closeSurface(String pluginId, String surfaceId);
+  Future<bool> surfaceEvent(String pluginId, String surfaceId, Map<String, dynamic> event);
+  Future<Map<String, dynamic>?> surfaceState(String pluginId, String surfaceId);
+
+  Future<List<Map<String, dynamic>>> listMemories(
+    String pluginId, {
+    String? keyword,
+    int limit = 20,
+  });
+
+  Future<String> addMemory(
+    String pluginId, {
+    required String content,
+    String kind = 'custom',
+    Map<String, dynamic>? metadata,
+  });
+}
+
 abstract class HostChatContext {
   /// 用户当前打开的对话 id；不在对话页时为 null。
   ///

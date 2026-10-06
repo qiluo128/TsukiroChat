@@ -23,6 +23,21 @@
 
 ## 2. 消息封套
 
+所有消息统一为 JSON 对象。Surface 消息还必须绑定宿主创建的 `instanceId` 与 `surfaceId`；旧实例、未知 Surface 或已销毁实例的消息必须拒绝并记审计：
+
+```jsonc
+{
+  "v": 2,
+  "kind": "evt",
+  "method": "surface.resize",
+  "instanceId": "instance_abc",
+  "surfaceId": "game",
+  "params": { "width": 360, "height": 640 }
+}
+```
+
+普通插件不能通过 Surface 获得 Flutter/Dart 执行权；Flame Surface 只能选择宿主已注册的 `gameType`。
+
 所有消息统一为 JSON 对象：
 
 ```jsonc

@@ -15,7 +15,8 @@
   "permissions": [
     { "name": "chat.read", "reason": "读取当前对话里最近一条消息，作为翻译对象" },
     { "name": "model.chat", "reason": "调用 AI 模型进行翻译（会消耗你的点数）" },
-    { "name": "ui", "reason": "显示翻译进度提示与结果对话框" }
+    { "name": "ui", "reason": "显示翻译进度提示与结果对话框" },
+    { "name": "sys.clipboard.write", "reason": "用户选择复制译文时写入剪贴板" }
   ],
 
   "config": {
@@ -51,7 +52,7 @@
         "order": 10,
         "when": { "hasMessages": true, "isStreaming": false },
         "onClick": { "event": "translate.clicked" },
-        "permissions": ["model.chat"]
+        "permissions": ["model.chat", "sys.clipboard.write"]
       }
     ],
     "pages": [

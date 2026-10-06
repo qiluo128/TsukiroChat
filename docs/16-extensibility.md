@@ -286,7 +286,18 @@ if (caps.primitives['context.inject']?.implemented) {
 
 ---
 
-## 7. 必须避免的反面模式清单
+## 7. Surface 与 Flame 扩展轴
+
+复杂交互不应继续堆叠到 `provides.ui` 的控件类型中。Surface 采用独立注册表：
+
+- `kind:web`：插件自有 HTML/CSS/JS WebView，受 CSP、导航、尺寸和 Bridge 限制；
+- `kind:flame`：manifest 只选择宿主编译期注册的 `gameType`，由 `GameWidget` 承载；
+- capability（dragDrop、richText、animation、canvas）只描述 UI 技术能力，不自动授予文件、网络、模型或剪贴板权限；
+- Surface 实例绑定 `pluginId + instanceId + surfaceId`，重装/停用/卸载必须销毁旧实例。
+
+普通插件不得上传 Dart、Flutter snapshot、native library 或动态 Flame runtime。这样可以支持游戏和复杂 UI，同时保持 `plugin_core` 纯 Dart、权限集中在宿主和 Bridge。
+
+## 8. 必须避免的反面模式清单
 
 | 反面模式 | 为什么不行 | 正确做法 |
 |---|---|---|

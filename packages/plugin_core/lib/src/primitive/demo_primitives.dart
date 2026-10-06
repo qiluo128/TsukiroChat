@@ -23,6 +23,16 @@ const Map<String, PrimitiveHandler> demoPrimitiveHandlers = <String, PrimitiveHa
   'sys.time': handleSysTime,
   'chat.lastMessage': handleChatLastMessage,
   'chat.info': handleChatInfo,
+  'agent.state.get': handleAgentStateGet,
+  'agent.state.set': handleAgentStateSet,
+  'agent.greet': handleAgentGreet,
+  'agent.model.chat': handleAgentModelChat,
+  'message.append': handleMessageAppend,
+  'surface.open': handleSurfaceOpen,
+  'surface.update': handleSurfaceUpdate,
+  'surface.close': handleSurfaceClose,
+  'memory.list': handleMemoryList,
+  'memory.add': handleMemoryAdd,
   'config.get': handleConfigGet,
   'config.set': handleConfigSet,
   'config.all': handleConfigAll,
@@ -315,6 +325,99 @@ Future<Object?> handleChatInfo(PrimitiveCall call) async {
     'active': id != null,
     'conversationId': id,
   };
+}
+
+// ─────────────────────────── agent.state / memory ───────────────────────────
+
+Future<Object?> handleAgentStateGet(PrimitiveCall call) async {
+  final state = call.require<HostAgentState>();
+  return state.getState(call.pluginId);
+}
+
+Future<Object?> handleAgentStateSet(PrimitiveCall call) async {
+  final state = call.require<HostAgentState>();
+  final raw = call.args['patch'];
+  if (raw is! Map) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, 'patch 必须是对象');
+  }
+  return state.setState(call.pluginId, raw.map((k, v) => MapEntry('$k', v)));
+}
+
+Future<Object?> handleAgentGreet(PrimitiveCall call) async {
+  final state = call.require<HostAgentState>();
+  return <String, dynamic>{'text': await state.greet(call.pluginId)};
+}
+
+Future<Object?> handleAgentModelChat(PrimitiveCall call) async {
+  final state = call.require<HostAgentState>();
+  final raw = call.args['messages'];
+  if (raw is! List || raw.isEmpty) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, 'messages 必须是非空数组');
+  }
+  final messages = raw
+      .whereType<Map<Object?, Object?>>()
+      .map((item) => item.map((k, v) => MapEntry('$k', v)))
+      .toList();
+  return state.modelChat(call.pluginId, messages);
+}
+
+Future<Object?> handleMessageAppend(PrimitiveCall call) async {
+  final state = call.require<HostAgentState>();
+  final content = call.args['content']?.toString().trim() ?? '';
+  if (content.isEmpty) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, 'content 不能为空');
+  }
+  return <String, dynamic>{'id': await state.appendAssistantMessage(call.pluginId, content)};
+}
+
+Future<Object?> handleSurfaceOpen(PrimitiveCall call) async {
+  final state = call.require<HostAgentState>();
+  final id = call.args['surfaceId']?.toString() ?? '';
+  if (id.isEmpty) throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 surfaceId');
+  return <String, dynamic>{'ok': await state.openSurface(call.pluginId, id)};
+}
+
+Future<Object?> handleSurfaceUpdate(PrimitiveCall call) async {
+  final state = call.require<HostAgentState>();
+  final id = call.args['surfaceId']?.toString() ?? '';
+  final raw = call.args['state'];
+  if (id.isEmpty || raw is! Map) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, '需要 surfaceId 和 state');
+  }
+  return <String, dynamic>{'ok': await state.updateSurface(call.pluginId, id, raw.map((k, v) => MapEntry('$k', v)))};
+}
+
+Future<Object?> handleSurfaceClose(PrimitiveCall call) async {
+  final state = call.require<HostAgentState>();
+  final id = call.args['surfaceId']?.toString() ?? '';
+  if (id.isEmpty) throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 surfaceId');
+  return <String, dynamic>{'ok': await state.closeSurface(call.pluginId, id)};
+}
+
+Future<Object?> handleMemoryList(PrimitiveCall call) async {
+  final state = call.require<HostAgentState>();
+  final keyword = call.args['keyword']?.toString();
+  final limit = (call.args['limit'] as num?)?.toInt() ?? 20;
+  return <String, dynamic>{
+    'items': await state.listMemories(call.pluginId, keyword: keyword, limit: limit),
+  };
+}
+
+Future<Object?> handleMemoryAdd(PrimitiveCall call) async {
+  final state = call.require<HostAgentState>();
+  final content = call.args['content']?.toString().trim() ?? '';
+  if (content.isEmpty) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, 'content 不能为空');
+  }
+  final id = await state.addMemory(
+    call.pluginId,
+    content: content,
+    kind: call.args['kind']?.toString() ?? 'custom',
+    metadata: call.args['metadata'] is Map
+        ? (call.args['metadata'] as Map).map((k, v) => MapEntry('$k', v))
+        : null,
+  );
+  return <String, dynamic>{'id': id};
 }
 
 // ─────────────────────────── config.* ───────────────────────────

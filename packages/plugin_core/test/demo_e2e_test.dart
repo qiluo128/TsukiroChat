@@ -626,7 +626,7 @@ void main() {
   // ═══════════════════ 可扩展性 ═══════════════════
 
   group('可扩展性（这轮的重点）', () {
-    test('全部 24 个域都注册了，但只有 7 个有实现', () {
+    test('全部 24 个域都注册了，并包含状态与记忆实现', () {
       final rig = makeRig(<ModelReply>[ModelReply(text: 'x')]);
 
       expect(rig.registry.domains, containsAll(<String>[
@@ -637,8 +637,8 @@ void main() {
       ]));
 
       expect(rig.registry.length, greaterThan(100));
-      expect(rig.registry.implementedCount, 7,
-          reason: '4 个 Demo 原语 + 3 个自省原语');
+      expect(rig.registry.implementedCount, 23,
+          reason: '基础原语、自省原语、状态/记忆和 Surface 原语');
     });
 
     test('自省：插件能在运行期问宿主支持什么', () async {

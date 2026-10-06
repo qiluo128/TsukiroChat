@@ -44,6 +44,7 @@ export 'src/common/semver.dart';
 
 // ── 插件描述与包 ──
 export 'src/manifest/manifest.dart';
+export 'src/manifest/surface.dart';
 export 'src/manifest/parser.dart';
 export 'src/manifest/theme.dart';
 export 'src/packaging/installer.dart';
@@ -72,6 +73,7 @@ export 'src/hook/hook_bus.dart';
 
 // ── 注册表 ──
 export 'src/registry/slot_registry.dart';
+export 'src/registry/surface_registry.dart';
 export 'src/registry/tool_registry.dart';
 
 // ── 沙箱 ──

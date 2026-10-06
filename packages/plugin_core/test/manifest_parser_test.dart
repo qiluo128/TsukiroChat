@@ -59,7 +59,7 @@ void main() {
       expect(btn.type, 'button');
       expect(btn.onClickEvent, 'translate.clicked');
       expect(btn.when, <String, dynamic>{'hasMessages': true, 'isStreaming': false});
-      expect(btn.permissions, <String>['model.chat']);
+      expect(btn.permissions, <String>['model.chat', 'sys.clipboard.write']);
       expect(m.config?.section?.slot, 'settings.sections');
     });
 

@@ -68,8 +68,10 @@ class PluginHost extends ChangeNotifier {
     required this.primitiveRegistry,
     required this.audit,
     SlotRegistry? slotRegistry,
+    SurfaceRegistry? surfaceRegistry,
     this.settings,
-  }) : slotRegistry = slotRegistry ?? SlotRegistry();
+  })  : slotRegistry = slotRegistry ?? SlotRegistry(),
+        surfaceRegistry = surfaceRegistry ?? SurfaceRegistry();
 
   final ToolRegistry toolRegistry;
   final Gatekeeper gatekeeper;
@@ -84,10 +86,15 @@ class PluginHost extends ChangeNotifier {
   /// 插槽注册表。**和工具表一样，必须是调用方传进来的那一份** ——
   /// 界面渲染时查的是它，如果这里 new 一个新的，界面上永远看不到插件 UI。
   final SlotRegistry slotRegistry;
+  final SurfaceRegistry surfaceRegistry;
+
+  HostAgentState? get agentState => primitiveRegistry.services.get<HostAgentState>();
 
   final List<InstalledPlugin> _plugins = <InstalledPlugin>[];
+  final Map<String, Future<void>> _installTails = <String, Future<void>>{};
   String? _rootDir;
   bool _initialized = false;
+  final Map<String, String> installErrors = <String, String>{};
 
   List<InstalledPlugin> get plugins => List<InstalledPlugin>.unmodifiable(_plugins);
 
@@ -109,8 +116,8 @@ class PluginHost extends ChangeNotifier {
     _initialized = true;
     notifyListeners();
 
-    // 自动启动是**后台**的：插件起不来不该拖住 App 启动
-    unawaited(startAutoStartPlugins());
+    // 初始化阶段串行完成自动启动，避免后续演示插件增量安装同时清理/重建 runtime。
+    await startAutoStartPlugins();
   }
 
   /// 指定插件根目录并扫描。
@@ -126,11 +133,18 @@ class PluginHost extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _scan() async {    _plugins.clear();
+  Future<void> _scan() async {
+    // 扫描会重建 InstalledPlugin 对象；先停止并注销旧状态，避免旧 WebView、
+    // 工具、插槽和权限继续挂在新扫描结果之外。
+    await _clearRuntimeAndDeclarations();
+    _plugins.clear();
     final root = Directory(_rootDir!);
     if (!root.existsSync()) return;
 
     for (final entry in root.listSync().whereType<Directory>()) {
+      // 原子安装会在根目录短暂保留 .staging-* / .backup-* 目录；
+      // 它们不是可运行插件，不能被扫描成第二份同 id 插件。
+      if (p.basename(entry.path).startsWith('.')) continue;
       final manifestFile = File(p.join(entry.path, 'manifest.json'));
       if (!manifestFile.existsSync()) continue;
       try {
@@ -160,18 +174,30 @@ class PluginHost extends ChangeNotifier {
     }
   }
 
+  Future<void> _clearRuntimeAndDeclarations() async {
+    for (final plugin in List<InstalledPlugin>.from(_plugins)) {
+      await plugin.runtime?.stop();
+      toolRegistry.unregisterPlugin(plugin.id);
+      slotRegistry.unregisterPlugin(plugin.id);
+      surfaceRegistry.unregisterPlugin(plugin.id);
+      gatekeeper.unregisterPlugin(plugin.id);
+    }
+  }
+
   void _registerDeclarations(InstalledPlugin plugin) {
     gatekeeper.registerPlugin(
       plugin.id,
       plugin.manifest.permissions.map((d) => d.name),
     );
-    // 安装即授权：Demo 阶段不做逐项确认流程。
+    // 安装即授权：Demo 阶段不做逐项确认流程；已停用插件不授予权限。
     // 正式版这里应当改成"先问用户，再 grantAll"——
     // 但**声明即上限**这条约束不受影响，插件仍然调不到没声明的东西。
-    gatekeeper.grantAll(
-      plugin.id,
-      plugin.manifest.permissions.map((d) => d.name),
-    );
+    if (plugin.enabled) {
+      gatekeeper.grantAll(
+        plugin.id,
+        plugin.manifest.permissions.map((d) => d.name),
+      );
+    }
 
     final conflicts = toolRegistry.registerPlugin(plugin.manifest);
     if (conflicts.isNotEmpty) {
@@ -183,6 +209,7 @@ class PluginHost extends ChangeNotifier {
     // 这是刻意的 —— 未知插槽静默忽略，插件往新版宿主才有的插槽放东西时，
     // 在旧宿主上只是不显示，而不是装都装不上。
     final unknownSlots = slotRegistry.registerPlugin(plugin.manifest);
+    surfaceRegistry.registerPlugin(plugin.manifest);
     if (unknownSlots.isNotEmpty) {
       debugPrint('[plugin] ${plugin.id} 用了未知插槽：${unknownSlots.join(', ')}'
           '（已忽略，不影响其他功能）');
@@ -385,14 +412,18 @@ class PluginHost extends ChangeNotifier {
     await _writeEnabled(pluginId, enabled);
 
     if (enabled) {
+      // 停用时声明已被摘掉，重新启用必须完整注册权限、工具、插槽和 Surface。
+      _registerDeclarations(plugin);
       await _startOne(plugin);
     } else {
       await plugin.runtime?.stop();
       plugin.runtime = null;
-      // 停用时把工具与插槽都摘掉 —— 否则模型还能看到它的工具、
-      // 界面还占着它的位置，点了却没人接
+      // 停用时把权限、工具与插槽都摘掉 —— 否则模型还能看到它的工具、
+      // 界面还占着它的位置，点了却没人接。
       toolRegistry.unregisterPlugin(pluginId);
       slotRegistry.unregisterPlugin(pluginId);
+      surfaceRegistry.unregisterPlugin(pluginId);
+      gatekeeper.unregisterPlugin(pluginId);
     }
     notifyListeners();
   }
@@ -406,6 +437,19 @@ class PluginHost extends ChangeNotifier {
 
   // ─────────────────────────── 安装 / 卸载 ───────────────────────────
 
+  /// 确保某个内置演示插件已安装；已有插件不会被覆盖。
+  ///
+  /// 这是增量安装入口：旧版本已经写过 demoPluginsInstalled 标记时，
+  /// 新增的演示插件仍然可以被补装。
+  Future<bool> ensureFromAssets(String assetDir) async {
+    final bundle = await loadBundleFromAssets(assetDir);
+    final id = bundle.manifest.id;
+    if (_find(id) != null) return false;
+    if (await settings?.get('plugin.demo.suppressed.$id') == '1') return false;
+    await installFromAssets(assetDir);
+    return true;
+  }
+
   /// 从内置资源安装（首次启动装演示插件）。
   ///
   /// 正式版会从 zip 装（`plugin_core` 的 [Installer] 已经做了原子提交与
@@ -413,37 +457,126 @@ class PluginHost extends ChangeNotifier {
   /// 属于后续工作。这里先把「装完之后能跑」这条路打通。
   Future<InstalledPlugin> installFromAssets(String assetDir) async {
     final bundle = await loadBundleFromAssets(assetDir);
-    final target = Directory(p.join(_rootDir!, bundle.manifest.id));
+    // 手动重装代表用户明确要求恢复演示插件。
+    await settings?.set('plugin.demo.suppressed.${bundle.manifest.id}', '0');
+    await settings?.set('plugin.enabled.${bundle.manifest.id}', '1');
+    return _withInstallLock(bundle.manifest.id, () async {
+      final id = bundle.manifest.id;
+      final root = Directory(_rootDir!);
+      final target = Directory(p.join(root.path, id));
+      final staging = Directory(p.join(
+        root.path,
+        '.${id.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_')}.staging-${DateTime.now().microsecondsSinceEpoch}',
+      ));
+      final backup = Directory(p.join(
+        root.path,
+        '.${id.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_')}.backup-${DateTime.now().microsecondsSinceEpoch}',
+      ));
+      final runningIds = _plugins.where((plugin) => plugin.isReady).map((plugin) => plugin.id).toSet();
+      var oldMoved = false;
+      var newMoved = false;
+      var restored = false;
 
-    // 先把全部内容读齐再落盘。
-    // 写一半失败会留下一个装不上的残骸目录，而下次启动扫描时会把它
-    // 当成一个「清单不合法」的插件 —— 用户看到的是"我装过但没了"。
-    final manifestSource = await rootBundle.loadString('$assetDir/manifest.json');
-    final entryMain = bundle.manifest.runtime?.main;
+      try {
+        await _writeBundleToDirectory(assetDir, bundle, staging);
 
+        // 先停止并注销旧实例，再替换目录。旧 WebView 不能继续持有旧清单，
+        // 否则新扫描结果和旧 runtime 会分裂成两个版本。
+        await _clearRuntimeAndDeclarations();
+
+        if (target.existsSync()) {
+          await target.rename(backup.path);
+          oldMoved = true;
+        }
+        await staging.rename(target.path);
+        newMoved = true;
+
+        await _scan();
+        final installed = _find(id);
+        if (installed == null) {
+          throw PluginLoadException('安装后扫描不到 $id');
+        }
+        await _startConfiguredPlugins(runningIds);
+
+        if (backup.existsSync()) await backup.delete(recursive: true);
+        notifyListeners();
+        return installed;
+      } catch (error) {
+        // 新目录或注册失败时恢复旧目录；恢复后重新注册并启动原来正在运行的插件。
+        try {
+          if (newMoved && target.existsSync()) await target.delete(recursive: true);
+          if (oldMoved && backup.existsSync()) {
+            await backup.rename(target.path);
+            restored = true;
+          }
+          await _scan();
+          await _startConfiguredPlugins(runningIds);
+          notifyListeners();
+        } catch (restoreError) {
+          debugPrint('[plugin] 恢复 $id 失败：$restoreError');
+        }
+        rethrow;
+      } finally {
+        if (staging.existsSync()) await staging.delete(recursive: true);
+        // 恢复失败时保留 backup，避免新目录和旧版本都丢失。
+        if (backup.existsSync() && (newMoved || restored)) {
+          await backup.delete(recursive: true);
+        }
+      }
+    });
+  }
+
+  Future<T> _withInstallLock<T>(String pluginId, Future<T> Function() action) async {
+    final previous = _installTails[pluginId] ?? Future<void>.value();
+    final gate = Completer<void>();
+    _installTails[pluginId] = gate.future;
+    try {
+      await previous;
+      return await action();
+    } finally {
+      gate.complete();
+      if (identical(_installTails[pluginId], gate.future)) {
+        _installTails.remove(pluginId);
+      }
+    }
+  }
+
+  Future<void> _writeBundleToDirectory(
+    String assetDir,
+    PluginBundle bundle,
+    Directory target,
+  ) async {
     await target.create(recursive: true);
+    final manifestSource = await rootBundle.loadString('$assetDir/manifest.json');
     await File(p.join(target.path, 'manifest.json')).writeAsString(manifestSource);
 
+    final entryMain = bundle.manifest.runtime?.main;
     if (entryMain != null && bundle.entrySource.isNotEmpty) {
       final file = File(p.join(target.path, entryMain));
       await file.parent.create(recursive: true);
       await file.writeAsString(bundle.entrySource);
     }
-
-    for (final entry in bundle.handlerSources.entries) {
-      final file = File(p.join(target.path, entry.key));
+    for (final entry in <String, String>{
+      ...bundle.handlerSources,
+      ...bundle.pageSources,
+    }.entries) {
+      final normalized = p.normalize(entry.key);
+      if (normalized.startsWith('..') || p.isAbsolute(normalized)) {
+        throw PluginLoadException('插件资源路径非法：${entry.key}');
+      }
+      final file = File(p.join(target.path, normalized));
       await file.parent.create(recursive: true);
       await file.writeAsString(entry.value);
     }
+  }
 
-    await _scan();
-    notifyListeners();
-
-    final installed = _find(bundle.manifest.id);
-    if (installed == null) {
-      throw PluginLoadException('安装后扫描不到 ${bundle.manifest.id}');
+  Future<void> _startConfiguredPlugins(Set<String> previouslyRunning) async {
+    for (final plugin in List<InstalledPlugin>.from(_plugins)) {
+      if (!plugin.enabled) continue;
+      if (plugin.autoStart || previouslyRunning.contains(plugin.id)) {
+        await _startOne(plugin);
+      }
     }
-    return installed;
   }
 
   Future<void> uninstall(String pluginId) async {
@@ -453,11 +586,13 @@ class PluginHost extends ChangeNotifier {
     toolRegistry.unregisterPlugin(pluginId);
     gatekeeper.unregisterPlugin(pluginId);
     slotRegistry.unregisterPlugin(pluginId);
+    surfaceRegistry.unregisterPlugin(pluginId);
 
     final dir = Directory(plugin.directory);
     if (dir.existsSync()) await dir.delete(recursive: true);
 
     _plugins.removeWhere((x) => x.id == pluginId);
+    await settings?.set('plugin.demo.suppressed.$pluginId', '1');
     notifyListeners();
   }
 

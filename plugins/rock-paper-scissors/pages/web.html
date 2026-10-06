@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none';">
+<title>石头剪刀布</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif}body{margin:0;padding:20px;background:linear-gradient(150deg,#202946,#111827);color:#f8fafc;min-height:100vh;box-sizing:border-box}h1{margin:0 0 8px;font-size:24px}.score{color:#a5b4fc;margin-bottom:18px}.choices,.actions{display:flex;gap:10px;flex-wrap:wrap}.choices button,.actions button{border:0;border-radius:14px;padding:12px 18px;font-size:16px;cursor:pointer;color:#fff;background:#4f46e5}.choices button:hover{transform:translateY(-2px);background:#6366f1}.actions{margin-top:18px}.actions button{font-size:13px;padding:9px 14px;background:#334155}.result{margin-top:20px;min-height:52px;padding:14px;border-radius:14px;background:#1e293b;line-height:1.6}.hint{margin-top:16px;color:#94a3b8;font-size:12px}
+</style>
+</head>
+<body>
+<h1>石头剪刀布</h1><div id="score" class="score">0胜 0负 0平</div>
+<div class="choices"><button data-choice="rock">✊ 石头</button><button data-choice="paper">✋ 布</button><button data-choice="scissors">✌ 剪刀</button></div>
+<div id="result" class="result">选择你的出拳，AI 会用当前智能体模型回应。</div>
+<div class="actions"><button id="again">再来一局</button><button id="finish">结束并评价</button><button id="exit">退出</button></div>
+<div class="hint">游戏原始数据只显示在游戏界面；结束评价会追加到当前聊天并写入智能体记忆。</div>
+<script>
+const score=document.getElementById('score'),result=document.getElementById('result');
+function update(s){if(!s)return;score.textContent=s.score||'';result.textContent=s.result||'选择你的出拳，AI 会用当前智能体模型回应。';}
+document.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>tsukiro.event.emit('surface.event',{surfaceId:'web-game',action:'choice',value:b.dataset.choice}));
+document.getElementById('again').onclick=()=>tsukiro.event.emit('surface.event',{surfaceId:'web-game',action:'again'});
+document.getElementById('finish').onclick=()=>tsukiro.event.emit('surface.event',{surfaceId:'web-game',action:'finish'});
+document.getElementById('exit').onclick=()=>tsukiro.event.emit('surface.event',{surfaceId:'web-game',action:'exit'});
+tsukiro.event.on('surface.state',update);
+</script>
+</body>
+</html>

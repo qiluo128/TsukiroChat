@@ -14,6 +14,7 @@ import 'dart:convert';
 import '../common/semver.dart';
 import '../permission/permission.dart';
 import 'manifest.dart';
+import 'surface.dart';
 import 'theme.dart';
 
 /// 一条校验问题。
@@ -490,6 +491,7 @@ ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
   final tools = _parseTools(raw['tools'], errors);
   final ui = _parseUi(raw['ui'], errors);
   final pages = _parsePages(raw['pages'], errors);
+  final surfaces = _parseSurfaces(raw['surfaces'], errors);
   final themes = _parseThemes(raw['theme'] ?? raw['themes'], errors);
   final reserved = <String, dynamic>{};
 
@@ -521,9 +523,85 @@ ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
     tools: tools,
     ui: ui,
     pages: pages,
+    surfaces: surfaces,
     themes: themes,
     rawReserved: reserved,
   );
+}
+
+List<SurfaceDeclaration> _parseSurfaces(Object? raw, List<ManifestIssue> errors) {
+  if (raw == null) return const <SurfaceDeclaration>[];
+  if (raw is! List) {
+    errors.add(const ManifestIssue('provides.surfaces', '必须是数组'));
+    return const <SurfaceDeclaration>[];
+  }
+  final result = <SurfaceDeclaration>[];
+  final seen = <String>{};
+  for (var i = 0; i < raw.length; i++) {
+    final path = 'provides.surfaces[$i]';
+    final item = raw[i];
+    if (item is! Map<String, dynamic>) {
+      errors.add(ManifestIssue(path, '必须是对象'));
+      continue;
+    }
+    final id = item['id']?.toString().trim() ?? '';
+    final kind = SurfaceKind.parse(item['kind']?.toString());
+    final slot = item['slot']?.toString().trim() ?? '';
+    if (id.isEmpty || !seen.add(id)) {
+      errors.add(ManifestIssue('$path.id', 'id 缺失或重复'));
+      continue;
+    }
+    if (kind == null) {
+      errors.add(ManifestIssue('$path.kind', '必须是 web 或 flame'));
+      continue;
+    }
+    if (slot.isEmpty) {
+      errors.add(ManifestIssue('$path.slot', '不能为空'));
+      continue;
+    }
+    final entry = item['entry']?.toString();
+    final gameType = item['gameType']?.toString();
+    if (kind == SurfaceKind.web && (entry == null || entry.isEmpty)) {
+      errors.add(ManifestIssue('$path.entry', 'web Surface 必须声明 entry'));
+      continue;
+    }
+    if (kind == SurfaceKind.flame && (gameType == null || gameType.isEmpty)) {
+      errors.add(ManifestIssue('$path.gameType', 'flame Surface 必须声明 gameType'));
+      continue;
+    }
+    final rawCapabilities = item['capabilities'];
+    final capabilities = <String>[];
+    if (rawCapabilities is List) {
+      for (final capability in rawCapabilities) {
+        final name = '$capability';
+        if (!surfaceCapabilities.contains(name)) {
+          errors.add(ManifestIssue('$path.capabilities', '未知 capability "$name"'));
+        } else {
+          capabilities.add(name);
+        }
+      }
+    }
+    final rawPermissions = item['permissions'];
+    final permissions = rawPermissions is List
+        ? rawPermissions.map((value) => '$value').toList(growable: false)
+        : const <String>[];
+    num? number(Object? value) => value is num ? value : null;
+    result.add(SurfaceDeclaration(
+      id: id,
+      kind: kind,
+      slot: slot,
+      entry: entry,
+      gameType: gameType,
+      presentation: item['presentation']?.toString() ?? 'page',
+      minWidth: number(item['minWidth'])?.toDouble(),
+      minHeight: number(item['minHeight'])?.toDouble(),
+      maxWidth: number(item['maxWidth'])?.toDouble(),
+      maxHeight: number(item['maxHeight'])?.toDouble(),
+      capabilities: capabilities,
+      permissions: permissions,
+    ));
+  }
+  return result;
 }
 
 /// 校验预留段的形状。
@@ -918,6 +996,7 @@ List<UiDeclaration> _parseUi(Object? raw, List<ManifestIssue> errors) {
       config: item['config'] is Map<String, dynamic>
           ? item['config'] as Map<String, dynamic>
           : null,
+      binding: item['binding']?.toString(),
     ));
   }
   return result;
