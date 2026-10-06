@@ -5,6 +5,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:plugin_core/plugin_core.dart';
 
 import '../data/models.dart';
 import '../providers/app_providers.dart';

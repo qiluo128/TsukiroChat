@@ -26,6 +26,7 @@ import 'package:plugin_core/plugin_core.dart';
 
 import '../data/models.dart';
 import '../data/repositories.dart';
+import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
 import '../services/agent_context.dart';
 import 'app_keys.dart';
@@ -279,7 +280,11 @@ class AppAgentState implements HostAgentState {
     required this.agentGateway,
     this.surfaceController,
     this.onChanged,
+    this.memory,
   });
+
+  /// 记忆实现注册表。**外部记忆插件通过它接管记忆。**
+  final MemoryProviderRegistry? memory;
 
   /// 插件改了智能体状态后回调，用来通知界面重建。
   ///
@@ -306,6 +311,25 @@ class AppAgentState implements HostAgentState {
     if (chat.activeAgentId == null || chat.activeAgentId!.isEmpty) {
       throw StateError('当前不在智能体页面');
     }
+  }
+
+  /// 当前生效的记忆实现。
+  ///
+  /// 按 `agent.memory.providerPluginId` 解析；没配就是内置实现。
+  /// **找不到时退到内置** —— 见 MemoryProviderRegistry.resolve 的说明：
+  /// 插件被卸载/停用时不该让用户打不开对话。
+  ///
+  /// **这是外部记忆插件接入的缝。** 插件注册进注册表之后，
+  /// 这里与 AgentContextBuilder 都会自动走它，上层一行不用改。
+  Future<MemoryProvider> _memoryProvider() async {
+    final registry = memory;
+    if (registry == null) return BuiltinMemoryProvider(repos);
+
+    final agentId = chat.activeAgentId;
+    if (agentId == null || agentId.isEmpty) return registry.builtin;
+
+    final agent = await (await repos).agents.get(agentId);
+    return registry.resolve(agent?.memory.providerPluginId);
   }
 
   @override
@@ -358,7 +382,7 @@ class AppAgentState implements HostAgentState {
       ChatMessage.system('只输出自然的简短回应。'),
       ChatMessage.user(prompt),
     ];
-    final messages = await AgentContextBuilder(await repos).messages(
+    final messages = await AgentContextBuilder(await repos, memory: memory).messages(
       agent,
       taskMessages,
       conversationId: chat.activeConversationId,
@@ -401,7 +425,8 @@ class AppAgentState implements HostAgentState {
         .toList(growable: false);
     final agent = await (await repos).agents.get(chat.activeAgentId!);
     if (agent == null) throw StateError('当前智能体不存在');
-    final contextualMessages = await AgentContextBuilder(await repos).messages(
+    final contextualMessages =
+        await AgentContextBuilder(await repos, memory: memory).messages(
       agent,
       taskMessages,
       conversationId: chat.activeConversationId,
@@ -464,11 +489,31 @@ class AppAgentState implements HostAgentState {
   }) async {
     await _requireContext();
     final entries = keyword == null || keyword.trim().isEmpty
-        ? await (await repos).memories.listFor(chat.activeAgentId!, limit: limit.clamp(1, 50))
-        : await (await repos).memories.search(chat.activeAgentId!, keyword, limit: limit.clamp(1, 50));
+        // **走注册表，不直接读表。**
+        //
+        // 否则插件版记忆实现接管之后，`memory.list` 读到的还是内置表 ——
+        // 插件写进去的记忆自己读不到，而且不报错。
+        ? await (await _memoryProvider()).retrieve(MemoryQuery(
+            agentId: chat.activeAgentId!,
+            conversationId: chat.activeConversationId,
+            limit: limit.clamp(1, 50),
+            maxChars: null,
+          ))
+        : await (await _memoryProvider()).retrieve(MemoryQuery(
+            agentId: chat.activeAgentId!,
+            conversationId: chat.activeConversationId,
+            limit: limit.clamp(1, 50),
+            query: keyword,
+          ));
     return entries
         .where((e) => e.metadata['pluginId'] == pluginId)
-        .map((e) => <String, dynamic>{'id': e.id, 'content': e.content, 'type': e.type.name})
+        .map((e) => <String, dynamic>{
+              'id': e.id,
+              'content': e.content,
+              // type 现在是**开放式字符串**（内核 MemoryRecord 的设计），
+              // 不再是枚举 —— 插件自定义的记忆类型也能原样带出来
+              'type': e.type,
+            })
         .toList(growable: false);
   }
 

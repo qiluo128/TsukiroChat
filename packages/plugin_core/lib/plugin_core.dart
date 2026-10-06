@@ -44,6 +44,8 @@ export 'src/common/semver.dart';
 
 // ── 插件描述与包 ──
 export 'src/manifest/manifest.dart';
+// 记忆实现接口：插件将来要实现它，所以是公开契约
+export 'src/memory/memory_provider.dart';
 export 'src/manifest/surface.dart';
 export 'src/manifest/parser.dart';
 export 'src/manifest/theme.dart';

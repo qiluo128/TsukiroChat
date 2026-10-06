@@ -175,19 +175,11 @@ class AgentModelConfig {
       );
 }
 
-/// 记忆粒度。
-enum MemoryScope {
-  /// **默认**：一个智能体一个记忆库，所有对话共享。
-  agent,
-
-  /// 每个对话各自记忆。
-  conversation;
-
-  static MemoryScope parse(String? raw) =>
-      raw == 'conversation' ? MemoryScope.conversation : MemoryScope.agent;
-
-  String get label => this == MemoryScope.agent ? '所有对话共享' : '每个对话独立';
-}
+// 记忆粒度（MemoryScope）现在定义在 plugin_core 里 ——
+//
+// 它是**插件契约的一部分**：插件实现 MemoryProvider 时要声明
+// supportedScopes。只放在宿主内部的话，插件根本没法表达这件事。
+// 这里通过 import 'package:plugin_core/plugin_core.dart' 使用它。
 
 /// 记忆配置。**这是声明不是实现** —— 宿主提供层级，插件决定怎么记怎么取。
 class MemoryConfig {

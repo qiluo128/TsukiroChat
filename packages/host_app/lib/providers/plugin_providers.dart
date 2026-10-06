@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
 
 import '../plugin/host_services_impl.dart';
+import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
 import '../plugin/plugin_host.dart';
 import '../plugin/surface_controller.dart';
@@ -50,6 +51,20 @@ final chatContextProvider = Provider<AppChatContext>(
 
 final surfaceControllerProvider = Provider<PluginSurfaceController>((ref) =>
     PluginSurfaceController(navigatorKey: appNavigatorKey));
+
+/// 记忆实现的注册表。
+///
+/// **这是外部记忆插件将来接入的那个入口。** 插件实现 MemoryProvider 后，
+/// 往这里 register 一下，AgentContextBuilder 与 memory.* 原语就会按
+/// `agent.memory.providerPluginId` 找到它 —— 上层一行不用改。
+///
+/// 内置实现永远在（兜底），插件摘掉时自动退回它。
+final memoryRegistryProvider = Provider<MemoryProviderRegistry>((ref) {
+  return MemoryProviderRegistry(
+    builtin: BuiltinMemoryProvider(ref.watch(reposProvider.future)),
+    audit: ref.watch(auditSinkProvider),
+  );
+});
 
 /// 插件的智能体状态（心情、看法…）。
 ///
