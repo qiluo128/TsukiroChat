@@ -375,6 +375,24 @@ class MessageRepository {
     }
   }
 
+  /// 从某个 seq **起**（含）删掉该会话的全部消息。
+  ///
+  /// 撤回/编辑/重说共用它 —— 三者的语义都是「从这里往后都不要了」：
+  ///   撤回用户消息 → 连同它的回复一起删
+  ///   编辑用户消息 → 原回复作废，删掉重来
+  ///   重说         → 删掉最后那条回复
+  ///
+  /// 返回删掉的条数（after 钩子要报给插件）。
+  Future<int> deleteFrom(String conversationId, int seq) async {
+    final n = await _d.delete(
+      'messages',
+      where: 'conversation_id = ? AND seq >= ?',
+      whereArgs: <Object?>[conversationId, seq],
+    );
+    await ConversationRepository(_db).touch(conversationId);
+    return n;
+  }
+
   Future<void> clear(String conversationId) async {
     await _d.delete('messages', where: 'conversation_id = ?', whereArgs: <Object?>[conversationId]);
     await ConversationRepository(_db).touch(conversationId);

@@ -5,6 +5,7 @@
 /// 只是 `tools` / `gatekeeper` 里开始有东西。
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
 
@@ -71,6 +72,180 @@ class ChatController {
   /// 实现方式是在流式回调里抛异常 —— 那会取消 `await for` 的订阅，
   /// 从而**真正断掉 HTTP 流**，而不只是"界面上不显示了"。
   void cancel() => _cancelled = true;
+
+  // ═══════════════════════════ 消息操作 ═══════════════════════════
+  //
+  // 撤回 / 编辑 / 重说共用一条原则：**「从这里往后都不要了」**。
+  //
+  // 三个操作都会在动手前后各发一次钩子。**before 那次是关键** ——
+  // 撤回会把内容从库里删掉，插件只有那一次机会能把它抄走
+  // （审计、冷备、分离存储）。after 时内容已经没了，只剩 id 与条数。
+  //
+  // 见 plugin_core 的 MessageOpPayload。
+
+  /// 撤回一条消息，以及它之后的全部。
+  ///
+  /// 撤回用户消息会连带删掉它的回复 —— 这是聊天应用的通行语义：
+  /// 用户说"这条不算"，那句话和基于它的回答都该消失。
+  ///
+  /// 返回被删掉的条数。
+  Future<int> retract({
+    required String conversationId,
+    required String messageId,
+  }) async {
+    final repos = await _ref.read(reposProvider.future);
+    final target = await _findMessage(repos, conversationId, messageId);
+    if (target == null) return 0;
+
+    await _emitOp(conversationId, MessageOpPayload(
+      op: 'retract',
+      messageId: messageId,
+      role: target.role.name,
+      // **内容在这一刻还在** —— 这是插件保住它的唯一时机
+      content: target.content,
+    ));
+
+    final deleted = await repos.messages.deleteFrom(conversationId, target.seq);
+
+    await _emitOp(conversationId, MessageOpPayload(
+      op: 'retract',
+      messageId: messageId,
+      role: target.role.name,
+      deletedCount: deleted,
+    ));
+
+    _ref.invalidate(messagesProvider(conversationId));
+    _ref.invalidate(conversationProvider(conversationId));
+    return deleted;
+  }
+
+  /// 编辑一条用户消息，并让模型重新回答。
+  ///
+  /// 编辑后原回复作废（它答的是改之前的问题），所以从这条起全部删掉重来。
+  Future<void> edit({
+    required String conversationId,
+    required String messageId,
+    required String newText,
+  }) async {
+    final trimmed = newText.trim();
+    if (trimmed.isEmpty) throw StateError('消息不能为空');
+
+    final repos = await _ref.read(reposProvider.future);
+    final target = await _findMessage(repos, conversationId, messageId);
+    if (target == null) throw StateError('消息不存在（可能已被删除）');
+    if (!target.isUser) throw StateError('只能编辑自己发的消息');
+
+    await _emitOp(conversationId, MessageOpPayload(
+      op: 'edit',
+      messageId: messageId,
+      role: target.role.name,
+      // 原文与改后的文本都给 —— 插件据此能做版本历史
+      content: target.content,
+      newText: trimmed,
+    ));
+
+    await repos.messages.deleteFrom(conversationId, target.seq);
+    await _send(conversationId: conversationId, text: trimmed);
+
+    await _emitOp(conversationId, MessageOpPayload(
+      op: 'edit',
+      messageId: messageId,
+      role: target.role.name,
+      newText: trimmed,
+    ));
+  }
+
+  /// 重说：把最后一条回复作废，让模型重新答一次。
+  ///
+  /// 实现上是「连那条用户消息一起删掉，再用同样的文本重发一遍」。
+  /// 这样能直接复用 [send] 的整条路径（落库、流式、工具、审计），
+  /// 而不是维护第二套"只跑模型不落用户消息"的分支 ——
+  /// 两套分支迟早会跑偏。
+  Future<void> regenerate(String conversationId) async {
+    final repos = await _ref.read(reposProvider.future);
+    final all = await repos.messages.list(conversationId);
+
+    StoredChatMessage? lastAssistant;
+    for (final m in all.reversed) {
+      if (m.isAssistant && (m.content?.trim().isNotEmpty ?? false)) {
+        lastAssistant = m;
+        break;
+      }
+    }
+    if (lastAssistant == null) throw StateError('没有可以重说的回复');
+
+    StoredChatMessage? prevUser;
+    for (final m in all.reversed) {
+      if (m.isUser && m.seq < lastAssistant.seq) {
+        prevUser = m;
+        break;
+      }
+    }
+    if (prevUser == null) throw StateError('找不到这条回复对应的提问');
+
+    await _emitOp(conversationId, MessageOpPayload(
+      op: 'regenerate',
+      messageId: lastAssistant.id,
+      role: lastAssistant.role.name,
+      // 即将被丢弃的那条回复也带给插件
+      content: lastAssistant.content,
+    ));
+
+    await repos.messages.deleteFrom(conversationId, prevUser.seq);
+    await _send(conversationId: conversationId, text: prevUser.content ?? '');
+
+    await _emitOp(conversationId, MessageOpPayload(
+      op: 'regenerate',
+      messageId: lastAssistant.id,
+      role: lastAssistant.role.name,
+    ));
+  }
+
+  Future<StoredChatMessage?> _findMessage(
+    Repos repos,
+    String conversationId,
+    String messageId,
+  ) async {
+    final all = await repos.messages.list(conversationId);
+    for (final m in all) {
+      if (m.id == messageId) return m;
+    }
+    return null;
+  }
+
+  /// 发一次消息操作钩子。
+  ///
+  /// **失败只记日志，不打断操作** —— 钩子是旁路。
+  /// 插件没接、没在跑、超时，用户该撤回还是能撤回。
+  Future<void> _emitOp(String conversationId, MessageOpPayload payload) async {
+    try {
+      final phase = switch (payload.op) {
+        'retract' => payload.content != null
+            ? HookPhase.beforeMessageRetract
+            : HookPhase.afterMessageRetract,
+        'edit' => payload.newText != null && payload.content != null
+            ? HookPhase.beforeMessageEdit
+            : HookPhase.afterMessageEdit,
+        'regenerate' => payload.content != null
+            ? HookPhase.beforeRegenerate
+            : HookPhase.afterRegenerate,
+        _ => HookPhase.afterReply,
+      };
+
+      await _ref.read(hookBusProvider).emit(
+            phase,
+            HookContext(
+              phase: phase,
+              sessionId: conversationId,
+              systemPrompt: '',
+              messages: const <ChatMessage>[],
+              vars: <String, dynamic>{'messageOp': payload.toJson()},
+            ),
+          );
+    } catch (e) {
+      debugPrint('[hook] ${payload.op} 钩子失败：$e');
+    }
+  }
 
   /// 发一条消息并等模型回完。
   ///

@@ -651,6 +651,25 @@ class PluginHost extends ChangeNotifier {
     return ToolInvocationResult.failure(code, message);
   }
 
+  /// 调一个插件的钩子处理器。
+  ///
+  /// 走 Bridge 的 `hook.<phase>` 方法，对应插件侧的
+  /// `tsukiro.defineHook(phase, handler)` 或 `hook.<phase>` 注册。
+  ///
+  /// **失败不抛** —— 钩子是旁路，不该让主流程崩。
+  /// 返回 null 表示插件没接这个钩子（或没在跑）。
+  Future<Map<String, dynamic>?> invokeHook(
+    String pluginId,
+    String phase,
+    Map<String, dynamic> context,
+  ) async {
+    final plugin = _find(pluginId);
+    final runtime = plugin?.runtime;
+    if (runtime == null || !runtime.isReady) return null;
+
+    return runtime.invokeHook(phase, context);
+  }
+
   /// 往插件的日志里写一条（用户能在插件管理页看到）。
   void _note(String pluginId, String level, String message) {
     _find(pluginId)?.runtime?.addExternalLog(level, message, null);

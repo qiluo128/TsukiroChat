@@ -127,6 +127,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       streaming: streaming,
                       showReasoning: _showReasoning,
                       agentInitial: agent?.initial ?? '?',
+                      onAction: (m, action) => _handleMessageAction(m, action),
                     ),
             ),
           ),
@@ -178,6 +179,95 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       );
     });
   }
+
+  /// 处理消息上的操作。
+  ///
+  /// 每一种都**先落库再刷新**，失败时给明确提示 ——
+  /// 撤回/编辑是对用户数据的破坏性操作，"点了没反应"最让人不安。
+  Future<void> _handleMessageAction(
+    StoredChatMessage message,
+    MessageAction action,
+  ) async {
+    final controller = ref.read(chatControllerProvider);
+    final t = context.tokens;
+
+    try {
+      switch (action) {
+        case MessageAction.copy:
+          return;
+
+        case MessageAction.retract:
+          final ok = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('撤回这条消息？'),
+              content: Text(message.isUser
+                  ? '这条消息和它的回复都会被删除，无法恢复。'
+                  : '这条回复会被删除。'),
+              actions: <Widget>[
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: TextButton.styleFrom(foregroundColor: t.danger),
+                  child: const Text('撤回'),
+                ),
+              ],
+            ),
+          );
+          if (ok != true) return;
+          final n = await controller.retract(
+            conversationId: widget.conversationId,
+            messageId: message.id,
+          );
+          if (mounted && n > 0) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('已撤回 $n 条'), duration: const Duration(seconds: 1)),
+            );
+          }
+
+        case MessageAction.edit:
+          final text = await _promptEdit(message.content ?? '');
+          if (text == null || text.trim().isEmpty) return;
+          await controller.edit(
+            conversationId: widget.conversationId,
+            messageId: message.id,
+            newText: text,
+          );
+
+        case MessageAction.regenerate:
+          await controller.regenerate(widget.conversationId);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(userFacingError(e)), duration: const Duration(seconds: 4)),
+      );
+    }
+  }
+
+  Future<String?> _promptEdit(String initial) {
+    final ctrl = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('编辑消息'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 8,
+          decoration: const InputDecoration(hintText: '改完会让它重新回答'),
+        ),
+        actions: <Widget>[
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('保存并重答'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _MessageList extends StatelessWidget {
@@ -187,6 +277,7 @@ class _MessageList extends StatelessWidget {
     required this.streaming,
     required this.showReasoning,
     required this.agentInitial,
+    required this.onAction,
   });
 
   final ScrollController controller;
@@ -194,6 +285,7 @@ class _MessageList extends StatelessWidget {
   final StreamingBuffer? streaming;
   final bool showReasoning;
   final String agentInitial;
+  final void Function(StoredChatMessage message, MessageAction action) onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -205,10 +297,16 @@ class _MessageList extends StatelessWidget {
       itemBuilder: (context, index) {
         if (index == 0) return const SizedBox(height: 4);
         final m = messages[index - 1];
+        // 「重说」只对最后一条助手消息可用 —— 对中间某条重说
+        // 会作废它之后的整段对话，那不是用户按下按钮时想要的
+        final isLastAssistant = m.isAssistant &&
+            !messages.skip(index).any((x) => x.isAssistant);
         return MessageBubble(
           key: ValueKey<String>(m.id),
           message: m,
           agentInitial: agentInitial,
+          isLastAssistant: isLastAssistant,
+          onAction: (action) => onAction(m, action),
           // 只有正在流式输出那一条才吃缓冲
           streaming: (streaming != null && streaming!.messageId == m.id) ? streaming : null,
           showReasoning: showReasoning,

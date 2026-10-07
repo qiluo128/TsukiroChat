@@ -46,7 +46,35 @@ enum HookPhase {
   onMemoryRetrieve,
 
   /// 预留：切换会话时。
-  onSessionSwitch;
+  onSessionSwitch,
+
+  // ─────────────────── 消息操作（撤回 / 编辑 / 重说） ───────────────────
+  //
+  // 「撤回」会把内容从库里删掉。如果插件想留一份（审计、冷备、分离存储），
+  // **它只有 before 这一次机会** —— after 的时候内容已经没了。
+  //
+  // 所以 before 相位必须拿到被操作消息的**完整内容**，
+  // 而不只是一个 id。见 [MessageOpPayload]。
+
+  /// 撤回消息**之前**。
+  ///
+  /// 用途（用户举的例子）：插件拦截撤回、把内容另存一份。
+  /// 这是插件保住内容的唯一时机。
+  beforeMessageRetract,
+
+  /// 撤回之后。此时内容已经不在库里，只能拿到 id 与条数。
+  afterMessageRetract,
+
+  /// 编辑消息**之前**。载荷里同时有原文与改后的文本 ——
+  /// 插件据此可以做版本历史。
+  beforeMessageEdit,
+
+  afterMessageEdit,
+
+  /// 重新生成回复**之前**。载荷里带着那条即将被丢弃的回复。
+  beforeRegenerate,
+
+  afterRegenerate;
 
   static HookPhase? parse(String? raw) {
     for (final p in HookPhase.values) {
@@ -54,6 +82,76 @@ enum HookPhase {
     }
     return null;
   }
+}
+
+/// 消息操作的载荷。
+///
+/// 挂在 [HookContext.vars] 的 `'messageOp'` 键下。
+///
+/// ## 为什么 before 相位必须带 `content`
+///
+/// 「撤回」的语义是**把内容从库里删掉**。插件若想留一份
+/// （审计、冷备、分离存储），只有 before 那一次机会 ——
+/// after 的时候内容已经没了，光给 id 没有用。
+///
+/// 这是刻意的信息设计：**不假设插件只要知道"发生了什么"，
+/// 而是保证它在唯一能行动的时刻拿得到行动所需的东西。**
+class MessageOpPayload {
+  const MessageOpPayload({
+    required this.op,
+    required this.messageId,
+    this.role,
+    this.content,
+    this.newText,
+    this.deletedCount = 0,
+  });
+
+  /// `'retract'` | `'edit'` | `'regenerate'`。
+  final String op;
+
+  final String messageId;
+
+  /// user / assistant / system。
+  final String? role;
+
+  /// **被操作消息的完整内容。**
+  ///
+  /// before 相位一定有；afterMessageRetract 时为 null（已经删了）。
+  final String? content;
+
+  /// 仅编辑：改后的文本。
+  final String? newText;
+
+  /// 仅 after 相位：这次操作实际影响了多少条消息。
+  ///
+  /// 撤回用户消息会连带删掉它的回复，所以往往不止一条。
+  final int deletedCount;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'op': op,
+        'messageId': messageId,
+        if (role != null) 'role': role,
+        if (content != null) 'content': content,
+        if (newText != null) 'newText': newText,
+        'deletedCount': deletedCount,
+      };
+
+  static MessageOpPayload? fromVars(Map<String, dynamic> vars) {
+    final raw = vars['messageOp'];
+    if (raw is! Map) return null;
+    return MessageOpPayload(
+      op: raw['op']?.toString() ?? '',
+      messageId: raw['messageId']?.toString() ?? '',
+      role: raw['role']?.toString(),
+      content: raw['content']?.toString(),
+      newText: raw['newText']?.toString(),
+      deletedCount: (raw['deletedCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  @override
+  String toString() =>
+      'MessageOpPayload($op $messageId, content=${content?.length ?? 0} 字)';
 }
 
 /// 钩子对上下文的影响方式。

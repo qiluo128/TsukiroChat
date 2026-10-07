@@ -13,6 +13,9 @@ import '../data/models.dart';
 import '../providers/chat_controller.dart';
 import '../theme/app_theme.dart';
 
+/// 消息上能做的操作。
+enum MessageAction { copy, retract, edit, regenerate }
+
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
     super.key,
@@ -20,6 +23,8 @@ class MessageBubble extends StatelessWidget {
     this.agentInitial = '?',
     this.streaming,
     this.showReasoning = false,
+    this.onAction,
+    this.isLastAssistant = false,
   });
 
   final StoredChatMessage message;
@@ -35,6 +40,20 @@ class MessageBubble extends StatelessWidget {
 
   /// 是否展开思维链。
   final bool showReasoning;
+
+  /// 长按菜单选了哪一项。
+  ///
+  /// **用回调 + 枚举，而不是在气泡里直接操作**：
+  /// 气泡只负责"用户想干什么"，怎么干（落库、发钩子、重跑模型）
+  /// 属于控制器。而且「重说」作用于整轮，不该由单个气泡决定。
+  final void Function(MessageAction action)? onAction;
+
+  /// 是不是这条对话里**最后一条**助手消息。
+  ///
+  /// 「重说」作用于整轮，只能对最后一条回复用 ——
+  /// 对中间某条回复重说会把它之后的整段对话都作废，
+  /// 那不是用户按下"重说"时想要的。
+  final bool isLastAssistant;
 
   @override
   Widget build(BuildContext context) {
@@ -61,7 +80,7 @@ class MessageBubble extends StatelessWidget {
               if (!isUser) const SizedBox(width: 8),
               Flexible(
                 child: GestureDetector(
-                  onLongPress: () => _copy(context, text),
+                  onLongPress: () => _showMenu(context, text),
                   child: Container(
                     constraints: BoxConstraints(
                       maxWidth: MediaQuery.of(context).size.width * 0.76,
@@ -120,6 +139,78 @@ class MessageBubble extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// 长按菜单。
+  ///
+  /// 只列出**当前这条消息上说得通**的操作：
+  ///   - 正在流式输出的消息不给操作（内容还没定稿）
+  ///   - 只有用户消息能"编辑"
+  ///   - 只有助手消息能"重说"
+  ///   - 只有最后一条助手消息能"重说"（重说作用于整轮）
+  ///
+  /// 把不能用的项**列出来但禁用**，比直接不显示好：用户能知道
+  /// "这个功能存在，只是现在不适用"，而不是以为没有这个功能。
+  void _showMenu(BuildContext context, String text) {
+    if (message.isStreaming) return;
+    final t = context.tokens;
+    final canEdit = message.isUser;
+    final canRegenerate = message.isAssistant && isLastAssistant;
+
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListTile(
+              leading: const Icon(Icons.copy_outlined, size: 20),
+              title: const Text('复制'),
+              enabled: text.trim().isNotEmpty,
+              onTap: () {
+                Navigator.pop(ctx);
+                _copy(context, text);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.undo_outlined, size: 20),
+              title: const Text('撤回'),
+              subtitle: message.isUser
+                  ? const Text('连同它的回复一起删掉', style: TextStyle(fontSize: 12))
+                  : const Text('删掉这条回复', style: TextStyle(fontSize: 12)),
+              onTap: () {
+                Navigator.pop(ctx);
+                onAction?.call(MessageAction.retract);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.edit_outlined, size: 20, color: canEdit ? null : t.textMuted),
+              title: const Text('编辑'),
+              enabled: canEdit,
+              subtitle: canEdit ? null : const Text('只能编辑自己发的消息', style: TextStyle(fontSize: 12)),
+              onTap: () {
+                Navigator.pop(ctx);
+                onAction?.call(MessageAction.edit);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.refresh_outlined,
+                  size: 20, color: canRegenerate ? null : t.textMuted),
+              title: const Text('重说'),
+              enabled: canRegenerate,
+              subtitle: canRegenerate
+                  ? const Text('让它重新回答一次', style: TextStyle(fontSize: 12))
+                  : const Text('只能对最后一条回复重说', style: TextStyle(fontSize: 12)),
+              onTap: () {
+                Navigator.pop(ctx);
+                onAction?.call(MessageAction.regenerate);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }

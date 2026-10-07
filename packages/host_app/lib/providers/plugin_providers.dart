@@ -95,7 +95,33 @@ final Provider<AppAgentState> agentStateServiceProvider = Provider<AppAgentState
   );
 });
 
-final primitiveRegistryProvider = Provider<PrimitiveRegistry>((ref) {
+/// 钩子总线。
+///
+/// **dispatcher 用 `ref.read` 延迟解析 PluginHost** ——
+/// 钩子是在用户操作发生时才跑的，不在 provider build 时求值，
+/// 所以不会和 pluginHostProvider 形成循环依赖。
+///
+/// 这是钩子从「留了相位」变成「真的能拦截」的那一步：
+/// 没有这个 dispatcher，插件注册的钩子永远收不到调用。
+final Provider<HookBus> hookBusProvider = Provider<HookBus>((ref) {
+  return HookBus(
+    audit: ref.watch(auditSinkProvider),
+    dispatcher: (registration, context) async {
+      final host = ref.read(pluginHostValueProvider);
+      if (host == null) return null;
+      return host.invokeHook(
+        registration.pluginId,
+        registration.phase.name,
+        // 把整个 vars 交给插件 —— 里面按相位放着 messageOp / 工具参数等。
+        // 壳层的 HookContext（systemPrompt / messages）不进 JSON：
+        // 那些是可变的 Dart 对象，序列化过去插件也改不回来。
+        Map<String, dynamic>.from(context.vars),
+      );
+    },
+  );
+});
+
+final Provider<PrimitiveRegistry> primitiveRegistryProvider = Provider<PrimitiveRegistry>((ref) {
   // 先建一个**可变的服务表**，再把它交给注册表 ——
   // `primitive.list` / `host.capabilities` 要自省 PrimitiveRegistry 本身，
   // 所以必须先有注册表才能把它塞进服务表。共享一个可变表绕开这个循环。
@@ -155,7 +181,7 @@ final surfaceRegistryProvider = Provider<SurfaceRegistry>((ref) => SurfaceRegist
 final pluginHostRevisionProvider = StateProvider<int>((ref) => 0);
 
 /// 插件宿主。
-final pluginHostProvider = FutureProvider<PluginHost>((ref) async {
+final FutureProvider<PluginHost> pluginHostProvider = FutureProvider<PluginHost>((ref) async {
   // 显式 watch，保证工具表 / 门禁 / 原语注册表 / 插槽表都是同一组实例，
   // 且在宿主存活期间不被回收
   final tools = ref.watch(toolRegistryProvider);

@@ -211,9 +211,11 @@ final gatekeeperProvider = Provider<Gatekeeper>((ref) => Gatekeeper());
 
 final toolRegistryProvider = Provider<ToolRegistry>((ref) => ToolRegistry());
 
-final hookBusProvider = Provider<HookBus>((ref) {
-  return HookBus(dispatcher: (registration, context) async => null);
-});
+// hookBusProvider 挪到了 plugin_providers.dart ——
+//
+// 钩子要真正派发到插件，就得拿到 PluginHost；
+// 而 PluginHost 又依赖 HookBus。放在同一个文件里才能用**延迟 read**
+// 打破这个循环（dispatcher 是调用时才执行的，不在 build 时求值）。
 
 /// 供「关于」页显示数据库位置（排障用）。
 Future<String> debugDatabasePath() async {

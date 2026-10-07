@@ -66,6 +66,15 @@ abstract class PluginRuntime {
   /// 界面据此给用户明确反馈，而不是点下去毫无反应。
   bool sendEvent(String event, [Map<String, dynamic>? payload]);
 
+  /// 调一个钩子处理器。
+  ///
+  /// 返回插件给的改动（可能为 null）；**失败/没接/没在跑都返回 null**。
+  /// 钩子是旁路 —— 不该让主流程因为一个插件没接钩子而失败。
+  Future<Map<String, dynamic>?> invokeHook(
+    String phase,
+    Map<String, dynamic> context,
+  );
+
   /// 往这个插件的日志里追加一条（宿主侧产生的记录）。
   ///
   /// 工具调用失败、事件投递失败这类事发生在宿主侧，但**必须在插件日志里
@@ -352,6 +361,27 @@ class WebViewPluginRuntime implements PluginRuntime {
       at: DateTime.now(),
     ));
     if (kDebugMode) debugPrint('[plugin:$pluginId][$level] $message');
+  }
+
+  @override
+  Future<Map<String, dynamic>?> invokeHook(
+    String phase,
+    Map<String, dynamic> context,
+  ) async {
+    if (!isReady) return null;
+    final reply = await _session.invoke(
+      'hook.$phase',
+      params: <String, dynamic>{'context': context, 'phase': phase},
+      // 钩子是"顺手做的事"，不能拖住用户操作。
+      // 400ms 是宿主侧给的预算 —— 超了就跳过，不重试。
+      timeout: const Duration(milliseconds: 400),
+    );
+    if (reply.kind == BridgeKind.err) {
+      _log('warn', '钩子 $phase 失败：${reply.error?.message}');
+      return null;
+    }
+    final r = reply.result;
+    return r is Map<String, dynamic> ? r : null;
   }
 
   /// 供宿主转发的插件日志（`plugin.log` 事件、工具调用失败等）。
