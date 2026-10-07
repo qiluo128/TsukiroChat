@@ -26,6 +26,7 @@ import 'package:plugin_core/plugin_core.dart';
 
 import '../data/models.dart';
 import '../data/repositories.dart';
+import '../services/model_diagnostics.dart';
 import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
 import '../services/agent_context.dart';
@@ -389,12 +390,30 @@ class AppAgentState implements HostAgentState {
       // 带对话历史 —— 用户反馈「打招呼像是第一次见面」就是这里缺的
       includeHistory: true,
     );
+    // **预算不能给小。**
+    //
+    // 推理模型的思维链**也计入 max_tokens**（docs/17 实测）。
+    // 原先这里是 120 —— 思维链一写就吃光，正文为空，
+    // 而且请求很快返回（因为产出本来就少）。
+    // 表现就是"等待时间明显比正常短 + 说返回了空内容"。
+    //
+    // 1200 是够写一段两三百字回复、再留出思维链余量的量。
+    // 要更省的话应该做成"思维链预算"的配置项，而不是把总预算压小。
+    const budget = 1200;
     final reply = await gateway.complete(ModelRequest(
       messages: messages,
-      maxTokens: 120,
+      maxTokens: budget,
     ));
-    if (reply.text.trim().isEmpty) {
-      throw StateError('当前智能体模型返回了空内容');
+    if (isEmptyReply(reply)) {
+      // 空正文有好几种原因（思维链吃光预算 / finish_reason=length /
+      // 模型真回了个空串），报错要说清是哪一种 ——
+      // 全部糊成"返回了空内容"的话，用户只会反复重试，
+      // 而重试永远不会让预算变大。
+      throw StateError(describeEmptyReply(
+        reply,
+        where: '打招呼',
+        requestedMaxTokens: budget,
+      ));
     }
     final replyText = reply.text.trim();
     final next = await setState(pluginId, <String, dynamic>{
@@ -432,7 +451,14 @@ class AppAgentState implements HostAgentState {
       conversationId: chat.activeConversationId,
       includeHistory: true,
     );
+    // 这里**不设 maxTokens** —— 让上游用自己的默认值。
+    //
+    // 插件的 agent.model.chat 是要"真的说话"的（石头剪刀布的赛评、
+    // 翻译结果…），压小预算就会重演 greet 那个问题。
     final reply = await gateway.complete(ModelRequest(messages: contextualMessages));
+    if (isEmptyReply(reply)) {
+      throw StateError(describeEmptyReply(reply, where: 'agent.model.chat'));
+    }
     return <String, dynamic>{'text': reply.text, 'model': gateway.activeModel};
   }
 
