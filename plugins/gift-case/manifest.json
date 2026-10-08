@@ -1,0 +1,90 @@
+{
+  "manifestVersion": 1,
+  "id": "dev.tsukiro.gift",
+  "name": "礼物展柜",
+  "version": "1.0.0",
+  "description": "让智能体能送你礼物（带名称、描述和图案），并在主界面展示收到的全部礼物。演示原生 Flutter 界面窗口。",
+  "author": {
+    "name": "Tsukiro",
+    "url": "https://github.com/tsukiro-chat"
+  },
+  "license": "MIT",
+  "icon": "assets/icon.svg",
+  "keywords": ["gift", "ui", "native"],
+  "minHostVersion": "0.1.0",
+  "hostApi": "^1.0.0",
+
+  "runtime": {
+    "main": "index.js",
+    "type": "module",
+    "autoStart": true
+  },
+
+  "permissions": [
+    {
+      "name": "state",
+      "reason": "把收到的礼物保存在插件自己的存储里，这样重开应用还在"
+    },
+    {
+      "name": "ui.window",
+      "reason": "在主界面点开「礼物展柜」时，用一个原生窗口展示收到的礼物"
+    },
+    {
+      "name": "ui",
+      "reason": "送礼物成功或失败时给一句提示"
+    }
+  ],
+
+  "provides": {
+    "tools": [
+      {
+        "name": "send_gift",
+        "description": "送一份礼物给用户。当用户做了什么值得奖励的事、过节、或者你就是想表达心意时调用。礼物要有具体的名字和一句描述，并挑一个合适的图形和颜色。",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "礼物的名字，要具体。比如「一朵玫瑰」「星星糖」「会发光的石头」。"
+            },
+            "description": {
+              "type": "string",
+              "description": "一句话说明这份礼物，或者你想说的话。会被用户看到。"
+            },
+            "shape": {
+              "type": "string",
+              "enum": ["circle", "square", "triangle", "star", "heart", "diamond", "hexagon"],
+              "default": "heart",
+              "description": "礼物的图案形状。心形适合表达感情，星星适合奖励，圆形适合甜美的东西，菱形适合珍贵的东西。"
+            },
+            "color": {
+              "type": "string",
+              "description": "礼物的颜色，写成 #RRGGBB。要和礼物本身相称，比如玫瑰用 #E8556D、星星用 #F5C542。"
+            }
+          },
+          "required": ["name"],
+          "additionalProperties": false
+        },
+        "handler": "handlers/send_gift.js",
+        "permissions": ["state"],
+        "timeoutMs": 5000,
+        "returns": "object"
+      }
+    ],
+
+    "ui": [
+      {
+        "slot": "home.cards",
+        "id": "gift-case-open",
+        "type": "button",
+        "label": "礼物展柜",
+        "icon": "gift",
+        "tooltip": "看看收到过哪些礼物",
+        "order": 40,
+        "onClick": {
+          "event": "gift.open"
+        }
+      }
+    ]
+  }
+}

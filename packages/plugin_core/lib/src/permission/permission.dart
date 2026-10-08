@@ -86,6 +86,13 @@ const Map<String, PermissionSpec> permissionCatalog = <String, PermissionSpec>{
   // **比 ui.surface 低一档**（install 级 vs 也要 install），
   // 但比插槽控件高：它能占满一屏。
   // 它拿不到 Flutter，只能描述界面，所以攻击面比 WebView 小得多。
+  // 插件自己的存储。**不涉及用户数据** —— 里面的东西是插件自己写的，
+  // 所以是 install 级（装的时候说一声就够）。
+  'state': PermissionSpec(
+    'state',
+    PermissionLevel.install,
+    '保存这个插件自己的数据',
+  ),
   'ui.window': PermissionSpec(
     'ui.window',
     PermissionLevel.install,
@@ -291,6 +298,10 @@ const Map<String, String> _exactPrimitivePermissions = <String, String>{
   'agent.model.chat': 'model.chat',
   'memory.list': 'memory.read',
   'memory.add': 'memory.write',
+  'state.get': 'state',
+  'state.set': 'state',
+  'state.delete': 'state',
+  'state.list': 'state',
   'ui.window.open': 'ui.window',
   'ui.window.update': 'ui.window',
   'ui.window.close': 'ui.window',

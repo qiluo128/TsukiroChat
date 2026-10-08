@@ -303,6 +303,8 @@ final List<_E> _entries = <_E>[
   //
   // 插件送来一棵声明式 UI 树，宿主用 Flutter 渲染。
   // 有了它，画一个"礼物展柜"不必再开 WebView 或 Flame。
+  
+
   _E('ui.window.open', '打开一个原生窗口（内容由 root 描述）',
       permission: 'ui.window'),
   _E('ui.window.update', '更新原生窗口的内容', permission: 'ui.window'),
@@ -314,10 +316,10 @@ final List<_E> _entries = <_E>[
   _E('ui.setBadge', '设置角标', permission: 'ui'),
 
   // ───────────────────── 11. 存储（无需权限） ─────────────────────
-  _E('state.get', '读取插件私有键值'),
-  _E('state.set', '写入插件私有键值'),
-  _E('state.delete', '删除插件私有键值'),
-  _E('state.list', '列出插件私有键值'),
+  _E('state.get', '读取插件私有键值', permission: 'state'),
+  _E('state.set', '写入插件私有键值', permission: 'state'),
+  _E('state.delete', '删除插件私有键值', permission: 'state'),
+  _E('state.list', '列出插件私有键值', permission: 'state'),
 
   // ───────────────────── 12. 加密（无需权限） ─────────────────────
   _E('crypto.hash', '计算哈希'),

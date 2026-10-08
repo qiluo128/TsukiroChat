@@ -767,6 +767,30 @@ class SettingsRepository {
     return rows.isEmpty ? null : rows.first['value'] as String?;
   }
 
+  /// 删一个键。返回是否删掉了（本来就没了返回 false）。
+  Future<bool> delete(String key) async {
+    final n = await _d.delete('settings', where: 'key = ?', whereArgs: <Object?>[key]);
+    return n > 0;
+  }
+
+  /// 按前缀列出键名（不含值）。
+  ///
+  /// 给 `state.list` 用 —— 插件要能枚举自己写过哪些键。
+  Future<List<String>> keysWithPrefix(String prefix) async {
+    final rows = await _d.query(
+      'settings',
+      columns: <String>['key'],
+      where: 'key LIKE ?',
+      // 转义 LIKE 的通配符：插件 id 里理论上不会有 % 和 _，
+      // 但转义一下不花钱，而不转义就是个隐患
+      whereArgs: <Object?>[
+        '${prefix.replaceAll(r'\\', r'\\\\').replaceAll('%', r'\\%').replaceAll('_', r'\\_')}%',
+      ],
+      orderBy: 'key ASC',
+    );
+    return rows.map((r) => r['key']?.toString() ?? '').where((k) => k.isNotEmpty).toList(growable: false);
+  }
+
   Future<void> set(String key, String value) async {
     await _d.insert(
       'settings',

@@ -26,6 +26,11 @@ const Map<String, PrimitiveHandler> demoPrimitiveHandlers = <String, PrimitiveHa
   'chat.lastMessage': handleChatLastMessage,
   'chat.info': handleChatInfo,
   // ─────────────── 数据访问（docs/20 §4） ───────────────
+  'state.get': handleStateGet,
+  'state.set': handleStateSet,
+  'state.delete': handleStateDelete,
+  'state.list': handleStateList,
+
   'ui.window.open': handleUiWindowOpen,
   'ui.window.update': handleUiWindowUpdate,
   'ui.window.close': handleUiWindowClose,
@@ -369,6 +374,47 @@ UiNode _requireRoot(PrimitiveCall call) {
     );
   }
   return UiNode.parse(raw.map((k, v) => MapEntry('$k', v)));
+}
+
+/// 插件状态：读。
+Future<Object?> handleStateGet(PrimitiveCall call) async {
+  final state = call.require<HostPluginState>();
+  final key = _requireStateKey(call);
+  return <String, dynamic>{'key': key, 'value': await state.get(call.pluginId, key)};
+}
+
+/// 插件状态：写。
+Future<Object?> handleStateSet(PrimitiveCall call) async {
+  final state = call.require<HostPluginState>();
+  final key = _requireStateKey(call);
+  await state.set(call.pluginId, key, call.args['value']);
+  return <String, dynamic>{'key': key, 'ok': true};
+}
+
+/// 插件状态：删。
+Future<Object?> handleStateDelete(PrimitiveCall call) async {
+  final state = call.require<HostPluginState>();
+  final key = _requireStateKey(call);
+  return <String, dynamic>{'key': key, 'deleted': await state.delete(call.pluginId, key)};
+}
+
+/// 插件状态：列键。
+Future<Object?> handleStateList(PrimitiveCall call) async {
+  final state = call.require<HostPluginState>();
+  final prefix = call.args['prefix']?.toString();
+  final keys = await state.keys(call.pluginId, prefix: prefix);
+  return <String, dynamic>{'keys': keys, 'count': keys.length};
+}
+
+String _requireStateKey(PrimitiveCall call) {
+  final key = call.args['key']?.toString() ?? '';
+  if (key.isEmpty) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, '${call.name} 需要 key');
+  }
+  if (key.length > 256) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, 'key 过长（上限 256）');
+  }
+  return key;
 }
 
 Future<Object?> handleUiWindowOpen(PrimitiveCall call) async {

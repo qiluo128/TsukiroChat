@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:plugin_core/plugin_core.dart';
 
 import '../theme/app_theme.dart';
+import 'plugin_shape.dart';
 import 'plugin_slot.dart' show pluginIcon;
 
 /// 渲染一棵插件 UI 树。
@@ -92,6 +93,9 @@ class PluginNativeView extends StatelessWidget {
         return _card(context, node);
       case UiNodeType.section:
         return _section(context, node);
+
+      case UiNodeType.shape:
+        return _shape(context, node);
 
       case UiNodeType.unknown:
         // **不静默跳过**：插件用新版宿主的控件时，
@@ -208,6 +212,34 @@ class PluginNativeView extends StatelessWidget {
         alignment: Alignment.center,
         child: Icon(icon, size: 22, color: context.tokens.textMuted),
       );
+
+  /// 画一个二维图形。
+  ///
+  /// **唯一接受插件指定颜色的地方** —— 因为图形的颜色是内容
+  /// （玫瑰是红的），不是样式。见 [UiNode.shapeColor] 的说明。
+  Widget _shape(BuildContext context, UiNode node) {
+    final side = _shapeSize(node.size);
+    final argb = node.shapeColor;
+    final color = argb == null ? context.tokens.primary : Color(0xFF000000 | argb);
+    return SizedBox(
+      width: side,
+      height: side,
+      child: CustomPaint(
+        painter: PluginShapePainter(shape: node.shape ?? UiShape.circle, color: color),
+      ),
+    );
+  }
+
+  double _shapeSize(UiSize size) {
+    switch (size) {
+      case UiSize.sm:
+        return 32;
+      case UiSize.lg:
+        return 88;
+      case UiSize.md:
+        return 56;
+    }
+  }
 
   Widget _badge(BuildContext context, UiNode node) {
     final t = context.tokens;

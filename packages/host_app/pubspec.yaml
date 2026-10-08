@@ -70,4 +70,6 @@ flutter:
     - assets/demo_plugins/mini-game/
     - assets/demo_plugins/rock-paper-scissors/pages/
     - assets/demo_plugins/rock-paper-scissors/
+    - assets/demo_plugins/gift-case/handlers/
+    - assets/demo_plugins/gift-case/
     # <<< demo_plugins

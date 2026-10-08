@@ -310,6 +310,30 @@ abstract class HostScheduler {
 ///
 /// 窗口是**有状态**的：`open` 之后可以用 `update` 换内容，
 /// 所以宿主需要持有当前树（而不是每次重建）。
+/// 插件自己的键值存储。
+///
+/// **按插件分区**：插件 A 读不到插件 B 的键。
+/// 键名由插件自己定，宿主不做语义解释 —— 那部分是插件的自由。
+///
+/// 等 docs/20 的 per-agent 安装落地后，分区键会变成
+/// (pluginId, agentId)，接口签名不变。
+abstract class HostPluginState {
+  /// 读。键不存在返回 null（**不是错误** —— 首次运行时读一个
+  /// 还没写过的键是正常的）。
+  Future<Object?> get(String pluginId, String key);
+
+  /// 写。值是任意 JSON 可序列化的东西。
+  ///
+  /// 宿主会限制单个值的大小 —— 插件存储不是文件系统。
+  Future<void> set(String pluginId, String key, Object? value);
+
+  /// 删。键不存在返回 false。
+  Future<bool> delete(String pluginId, String key);
+
+  /// 列出键名（不含值）。[prefix] 可选。
+  Future<List<String>> keys(String pluginId, {String? prefix});
+}
+
 abstract class HostNativeWindow {
   /// 打开一个窗口。同一个 pluginId 下 windowId 唯一。
   ///

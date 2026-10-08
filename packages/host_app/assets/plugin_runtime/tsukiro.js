@@ -178,6 +178,25 @@
 
   var events = {
     on: function (name, fn) { on(eventHandlers, name, fn); },
+
+    /**
+     * 插件内部发一个事件。
+     *
+     * 工具处理器（handlers/xxx.js）和入口（index.js）是两个模块，
+     * 以前它们之间没有任何通道 —— 处理器改完了数据，却没法让
+     * 入口去刷新界面。
+     *
+     * **只在插件自己的运行时里跑**：不跨宿主、不跨别的插件。
+     * 跨边界必须走原语（那才过门禁和审计）。
+     */
+    emit: function (name, payload) {
+      try {
+        dispatchEvent(String(name), payload || {});
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
   };
 
   function defineTool(spec) {

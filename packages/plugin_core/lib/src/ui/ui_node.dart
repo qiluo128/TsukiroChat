@@ -54,6 +54,13 @@ enum UiNodeType {
   badge,
   progress,
 
+  /// 一个简单的二维图形。
+  ///
+  /// 这是「图案」而不是「样式」—— 礼物的颜色是**内容**的一部分
+  /// （玫瑰是红的），不是「这段文字该多显眼」。
+  /// 所以它是唯一允许插件指定颜色的节点，见 [UiNode.shapeColor]。
+  shape,
+
   // ── 交互 ──
   button,
   toggle,
@@ -79,6 +86,27 @@ enum UiNodeType {
       this == list ||
       this == card ||
       this == section;
+}
+
+/// 可画的二维图形。
+///
+/// **封闭集合**：新增一种图形 = 宿主加一段绘制代码。
+/// 不给 SVG path 之类的通用能力 —— 那等于让插件上传代码。
+enum UiShape {
+  circle,
+  square,
+  triangle,
+  star,
+  heart,
+  diamond,
+  hexagon;
+
+  static UiShape? parse(String? raw) {
+    for (final s in UiShape.values) {
+      if (s.name == raw) return s;
+    }
+    return null;
+  }
 }
 
 /// 语义化的强调级别。
@@ -149,6 +177,8 @@ class UiNode {
     this.spacing,
     this.flex,
     this.onTap,
+    this.shape,
+    this.shapeColor,
     this.children = const <UiNode>[],
   });
 
@@ -189,6 +219,24 @@ class UiNode {
 
   /// 点一下要发的事件名。
   final String? onTap;
+
+  /// 画什么图形（仅 [UiNodeType.shape]）。
+  final UiShape? shape;
+
+  /// 图形颜色，`0xRRGGBB`（仅 [UiNodeType.shape]）。
+  ///
+  /// ## 为什么只有这个节点能有颜色
+  ///
+  /// 别的地方只给语义（[UiEmphasis]），因为那是**样式** ——
+  /// 宿主该按主题决定。
+  ///
+  /// 但图形的颜色是**内容**：玫瑰是红的，这是礼物本身的一部分，
+  /// 不是「这个标题该多显眼」。所以它由插件决定。
+  ///
+  /// 边界很清楚：**只有 shape 有颜色字段**。text / button 想染红
+  /// 仍然只能走 emphasis。这样既给了图案自由，又没打开
+  /// 「插件自带一套 CSS」的口子。
+  final int? shapeColor;
 
   final List<UiNode> children;
 
@@ -288,6 +336,8 @@ class UiNode {
       spacing: (raw['spacing'] as num?)?.toDouble().clamp(0, 64),
       flex: (raw['flex'] as num?)?.toInt().clamp(0, 20),
       onTap: _shortString(raw['onTap'], 128),
+      shape: UiShape.parse(raw['shape']?.toString()),
+      shapeColor: _parseColor(raw['color']),
       children: children,
     );
   }
@@ -317,6 +367,30 @@ class UiNode {
       );
     }
     return url;
+  }
+
+  /// 解析 `#RRGGBB` / `#RGB`。
+  ///
+  /// **不接受** `rgb()` / 颜色名 / `transparent` —— 那些要么要解析器，
+  /// 要么行为含糊（「红」是哪个红？）。
+  /// 一个小而确定的语法比一个大而含糊的好。
+  static int? _parseColor(Object? raw) {
+    if (raw == null) return null;
+    var text = raw.toString().trim();
+    if (text.isEmpty) return null;
+    if (text.startsWith('#')) text = text.substring(1);
+
+    if (text.length == 3) {
+      // #RGB → #RRGGBB
+      text = '${text[0]}${text[0]}${text[1]}${text[1]}${text[2]}${text[2]}';
+    }
+    if (text.length != 6 || !RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(text)) {
+      throw TsukiroException(
+        TsukiroErrorCode.invalidArgs,
+        '颜色要写成 #RRGGBB 或 #RGB，收到「$raw」',
+      );
+    }
+    return int.parse(text, radix: 16);
   }
 
   static String? _shortString(Object? raw, int max) {

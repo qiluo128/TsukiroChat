@@ -15,6 +15,7 @@ import 'package:plugin_core/plugin_core.dart';
 
 import '../plugin/host_services_impl.dart';
 import '../plugin/native_window.dart';
+import '../plugin/plugin_state.dart';
 import '../services/data_access.dart';
 import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
@@ -33,6 +34,7 @@ const List<String> demoTemplatePlugins = <String>[
   'assets/demo_plugins/status-panel',
   'assets/demo_plugins/mini-game',
   'assets/demo_plugins/rock-paper-scissors',
+  'assets/demo_plugins/gift-case',
 ];
 
 const int demoTemplateSetVersion = 2;
@@ -150,6 +152,8 @@ final Provider<PrimitiveRegistry> primitiveRegistryProvider = Provider<Primitive
     ..put<HostAgentState>(ref.watch(agentStateServiceProvider))
     ..put<HostPluginConfig>(AppPluginConfig(repos: ref.watch(reposProvider.future)))
     // 数据访问：SQL 由内核编译（可脱离数据库穷尽单测），宿主只负责执行
+    // 插件自己的键值存储（按 pluginId 分区）
+    ..put<HostPluginState>(AppPluginState(ref.watch(reposProvider.future)))
     // 原生窗口：插件描述界面，宿主用 Flutter 画（自动套主题）
     ..put<HostNativeWindow>(AppNativeWindow(
       navigatorKey: appNavigatorKey,

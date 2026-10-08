@@ -638,9 +638,9 @@ void main() {
       ]));
 
       expect(rig.registry.length, greaterThan(100));
-      expect(rig.registry.implementedCount, 29,
+      expect(rig.registry.implementedCount, 33,
           reason: '基础原语、自省原语、状态/记忆、Surface，'
-              '以及 data.* 与 ui.window.*');
+              '以及 data.* / ui.window.* / state.*');
     });
 
     test('自省：插件能在运行期问宿主支持什么', () async {
