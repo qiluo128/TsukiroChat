@@ -81,6 +81,16 @@ const Map<String, PermissionSpec> permissionCatalog = <String, PermissionSpec>{
   'memory.read': PermissionSpec('memory.read', PermissionLevel.install, '读取当前智能体的长期记忆'),
   'memory.write': PermissionSpec('memory.write', PermissionLevel.install, '写入当前智能体的长期记忆'),
   'ui.surface': PermissionSpec('ui.surface', PermissionLevel.install, '创建和更新插件 Surface'),
+  // 原生窗口 = 宿主用 Flutter 画的界面。
+  //
+  // **比 ui.surface 低一档**（install 级 vs 也要 install），
+  // 但比插槽控件高：它能占满一屏。
+  // 它拿不到 Flutter，只能描述界面，所以攻击面比 WebView 小得多。
+  'ui.window': PermissionSpec(
+    'ui.window',
+    PermissionLevel.install,
+    '打开由宿主渲染的界面窗口',
+  ),
 
   // ─────────────── 数据访问（docs/20 §4 / §7） ───────────────
 
@@ -281,6 +291,9 @@ const Map<String, String> _exactPrimitivePermissions = <String, String>{
   'agent.model.chat': 'model.chat',
   'memory.list': 'memory.read',
   'memory.add': 'memory.write',
+  'ui.window.open': 'ui.window',
+  'ui.window.update': 'ui.window',
+  'ui.window.close': 'ui.window',
   'data.query': 'data.read',
   'data.entities': 'data.read',
   'surface.open': 'ui.surface',

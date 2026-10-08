@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
 
 import '../plugin/host_services_impl.dart';
+import '../plugin/native_window.dart';
 import '../services/data_access.dart';
 import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
@@ -149,6 +150,12 @@ final Provider<PrimitiveRegistry> primitiveRegistryProvider = Provider<Primitive
     ..put<HostAgentState>(ref.watch(agentStateServiceProvider))
     ..put<HostPluginConfig>(AppPluginConfig(repos: ref.watch(reposProvider.future)))
     // 数据访问：SQL 由内核编译（可脱离数据库穷尽单测），宿主只负责执行
+    // 原生窗口：插件描述界面，宿主用 Flutter 画（自动套主题）
+    ..put<HostNativeWindow>(AppNativeWindow(
+      navigatorKey: appNavigatorKey,
+      dispatchEvent: (pluginId, event, payload) =>
+          ref.read(pluginHostValueProvider)?.dispatchUiEvent(pluginId, event, payload: payload) ?? false,
+    ))
     ..put<HostDataAccess>(AppDataAccess(
       repos: ref.watch(reposProvider.future),
       chat: ref.watch(chatContextProvider),

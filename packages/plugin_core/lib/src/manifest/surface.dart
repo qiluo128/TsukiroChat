@@ -5,8 +5,22 @@
 library;
 
 enum SurfaceKind {
+  /// 插件自带 HTML/CSS/JS，宿主开 WebView。
   web,
-  flame;
+
+  /// 宿主编译期注册的 FlameGame。插件只选 gameType。
+  flame,
+
+  /// **声明式的原生界面。**
+  ///
+  /// 插件在运行期送来一棵 [UiNode] 树，宿主用 Flutter 渲染。
+  /// 插件拿不到 Flutter，只能描述"我要一个三列网格" ——
+  /// 这不是限制，是**主题一致性的来源**：因为宿主画，
+  /// 颜色、圆角、间距、深浅色全都自动跟着设计 token 走。
+  ///
+  /// 适合列表、网格、卡片、图文这类"用 Flutter 画最简单"的界面。
+  /// 用 WebView 画它们要带一整套前端，而且主题永远接不上。
+  native;
 
   static SurfaceKind? parse(String? raw) {
     for (final value in SurfaceKind.values) {
@@ -55,6 +69,14 @@ class SurfaceDeclaration {
 
   bool get isWeb => kind == SurfaceKind.web;
   bool get isFlame => kind == SurfaceKind.flame;
+  bool get isNative => kind == SurfaceKind.native;
+
+  /// 这种 Surface 需不需要插件自带资源（entry / gameType）。
+  ///
+  /// native 不需要 —— 它的内容在运行期由插件送来，
+  /// 清单里只有一个 id 和一串尺寸约束。
+  bool get needsEntry => kind == SurfaceKind.web;
+  bool get needsGameType => kind == SurfaceKind.flame;
 
   @override
   String toString() => 'SurfaceDeclaration($id, ${kind.name}, $slot)';

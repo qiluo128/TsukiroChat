@@ -48,6 +48,8 @@ export 'src/manifest/manifest.dart';
 export 'src/memory/memory_provider.dart';
 // 声明式数据查询：插件读数据的唯一入口（见 docs/20 §4）
 export 'src/data/data_query.dart';
+// 运行期 UI 树：插件描述界面，宿主用 Flutter 渲染（docs/19 / 21）
+export 'src/ui/ui_node.dart';
 export 'src/manifest/surface.dart';
 export 'src/manifest/parser.dart';
 export 'src/manifest/theme.dart';

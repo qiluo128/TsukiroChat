@@ -10,6 +10,7 @@ library;
 
 import '../agent/chat_message.dart';
 import '../data/data_query.dart';
+import '../ui/ui_node.dart';
 
 // ─────────────────────────── 系统 ───────────────────────────
 
@@ -302,6 +303,41 @@ abstract class HostScheduler {
 /// 接口收 [DataQuery] + [DataScope] 而不是 SQL ——
 /// **宿主自己也不知道插件想要什么 SQL**，它只知道插件想要什么数据。
 /// 编译（拼 SQL）在内核里做，见 [DataQueryCompiler]。
+/// 原生窗口：宿主用 Flutter 渲染插件描述的界面。
+///
+/// **插件拿不到 Flutter** —— 它只能送来一棵 [UiNode] 树。
+/// 这是主题一致性的来源：因为宿主画，颜色圆角间距全自动跟着 token 走。
+///
+/// 窗口是**有状态**的：`open` 之后可以用 `update` 换内容，
+/// 所以宿主需要持有当前树（而不是每次重建）。
+abstract class HostNativeWindow {
+  /// 打开一个窗口。同一个 pluginId 下 windowId 唯一。
+  ///
+  /// 已经开着时**替换内容**并返回 true，不报错 ——
+  /// 插件重开自己的窗口是正常操作，不该让它先 close。
+  Future<bool> open(
+    String pluginId,
+    String windowId, {
+    String? title,
+    required UiNode root,
+  });
+
+  /// 更新内容与标题。窗口没开着时返回 false。
+  Future<bool> update(
+    String pluginId,
+    String windowId, {
+    String? title,
+    UiNode? root,
+  });
+
+  /// 关闭。没开着时返回 false（**不是错误** —— 关一个已经关了的窗口
+  /// 是幂等的正常情况）。
+  Future<bool> close(String pluginId, String windowId);
+
+  /// 这个插件当前有没有开着的窗口。
+  bool isOpen(String pluginId, String windowId);
+}
+
 abstract class HostDataAccess {
   /// 执行查询。
   ///

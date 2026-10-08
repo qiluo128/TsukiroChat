@@ -15,6 +15,7 @@ import '../common/errors.dart';
 import '../hook/hook_bus.dart';
 import '../sandbox/path_guard.dart';
 import '../data/data_query.dart';
+import '../ui/ui_node.dart';
 import 'host_services.dart';
 import 'primitive_registry.dart';
 import 'primitive_spec.dart';
@@ -25,6 +26,10 @@ const Map<String, PrimitiveHandler> demoPrimitiveHandlers = <String, PrimitiveHa
   'chat.lastMessage': handleChatLastMessage,
   'chat.info': handleChatInfo,
   // ─────────────── 数据访问（docs/20 §4） ───────────────
+  'ui.window.open': handleUiWindowOpen,
+  'ui.window.update': handleUiWindowUpdate,
+  'ui.window.close': handleUiWindowClose,
+
   'data.query': handleDataQuery,
   'data.queryAll': handleDataQuery,
   'data.entities': handleDataEntities,
@@ -339,6 +344,69 @@ Future<Object?> handleChatInfo(PrimitiveCall call) async {
 ///
 /// **这里不做 SQL**。把查询对象交给宿主，宿主自己编译并执行：
 /// 编译器在内核里（可脱离数据库穷尽单测），执行在宿主里（薄到没什么可错）。
+/// 从参数里取窗口 id。空 id 直接拒绝 —— 之后所有操作都靠它定位。
+String _requireWindowId(PrimitiveCall call) {
+  final id = call.args['windowId']?.toString().trim() ?? '';
+  if (id.isEmpty) {
+    throw TsukiroException(
+      TsukiroErrorCode.invalidArgs,
+      '${call.name} 需要 windowId',
+    );
+  }
+  if (id.length > 128) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, 'windowId 过长');
+  }
+  return id;
+}
+
+/// 从参数里取 UI 树。解析失败会带上具体原因（超深、超节点数…）。
+UiNode _requireRoot(PrimitiveCall call) {
+  final raw = call.args['root'];
+  if (raw is! Map) {
+    throw TsukiroException(
+      TsukiroErrorCode.invalidArgs,
+      '${call.name} 需要 root（一个 UI 节点对象）',
+    );
+  }
+  return UiNode.parse(raw.map((k, v) => MapEntry('$k', v)));
+}
+
+Future<Object?> handleUiWindowOpen(PrimitiveCall call) async {
+  final window = call.require<HostNativeWindow>();
+  final id = _requireWindowId(call);
+  final root = _requireRoot(call);
+  final opened = await window.open(
+    call.pluginId,
+    id,
+    title: call.args['title']?.toString(),
+    root: root,
+  );
+  return <String, dynamic>{'opened': opened, 'windowId': id};
+}
+
+Future<Object?> handleUiWindowUpdate(PrimitiveCall call) async {
+  final window = call.require<HostNativeWindow>();
+  final id = _requireWindowId(call);
+  // root 可选：只改标题时不必重传整棵树
+  final hasRoot = call.args.containsKey('root');
+  final updated = await window.update(
+    call.pluginId,
+    id,
+    title: call.args['title']?.toString(),
+    root: hasRoot ? _requireRoot(call) : null,
+  );
+  return <String, dynamic>{'updated': updated, 'windowId': id};
+}
+
+Future<Object?> handleUiWindowClose(PrimitiveCall call) async {
+  final window = call.require<HostNativeWindow>();
+  final id = _requireWindowId(call);
+  return <String, dynamic>{
+    'closed': await window.close(call.pluginId, id),
+    'windowId': id,
+  };
+}
+
 Future<Object?> handleDataQuery(PrimitiveCall call) async {
   final data = call.require<HostDataAccess>();
   final query = DataQuery.parse(call.args);

@@ -299,6 +299,15 @@ final List<_E> _entries = <_E>[
   _E('ui.sheet', '弹出底部面板', permission: 'ui'),
   _E('ui.overlay.show', '显示覆盖层', permission: 'ui.overlay'),
   _E('ui.overlay.hide', '隐藏覆盖层', permission: 'ui.overlay'),
+  // ─────────────── 原生窗口（docs/21） ───────────────
+  //
+  // 插件送来一棵声明式 UI 树，宿主用 Flutter 渲染。
+  // 有了它，画一个"礼物展柜"不必再开 WebView 或 Flame。
+  _E('ui.window.open', '打开一个原生窗口（内容由 root 描述）',
+      permission: 'ui.window'),
+  _E('ui.window.update', '更新原生窗口的内容', permission: 'ui.window'),
+  _E('ui.window.close', '关闭原生窗口', permission: 'ui.window'),
+
   _E('ui.navigate', '打开插件的独立页面', permission: 'ui'),
   _E('ui.close', '关闭当前页面', permission: 'ui'),
   _E('ui.setTitle', '设置容器标题', permission: 'ui'),
