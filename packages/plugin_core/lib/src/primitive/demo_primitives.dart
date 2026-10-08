@@ -14,6 +14,7 @@ import '../agent/chat_message.dart';
 import '../common/errors.dart';
 import '../hook/hook_bus.dart';
 import '../sandbox/path_guard.dart';
+import '../data/data_query.dart';
 import 'host_services.dart';
 import 'primitive_registry.dart';
 import 'primitive_spec.dart';
@@ -23,6 +24,11 @@ const Map<String, PrimitiveHandler> demoPrimitiveHandlers = <String, PrimitiveHa
   'sys.time': handleSysTime,
   'chat.lastMessage': handleChatLastMessage,
   'chat.info': handleChatInfo,
+  // ─────────────── 数据访问（docs/20 §4） ───────────────
+  'data.query': handleDataQuery,
+  'data.queryAll': handleDataQuery,
+  'data.entities': handleDataEntities,
+
   'agent.state.get': handleAgentStateGet,
   'agent.state.set': handleAgentStateSet,
   'agent.greet': handleAgentGreet,
@@ -328,6 +334,28 @@ Future<Object?> handleChatInfo(PrimitiveCall call) async {
 }
 
 // ─────────────────────────── agent.state / memory ───────────────────────────
+
+/// `data.query` —— 插件读宿主数据的唯一入口。
+///
+/// **这里不做 SQL**。把查询对象交给宿主，宿主自己编译并执行：
+/// 编译器在内核里（可脱离数据库穷尽单测），执行在宿主里（薄到没什么可错）。
+Future<Object?> handleDataQuery(PrimitiveCall call) async {
+  final data = call.require<HostDataAccess>();
+  final query = DataQuery.parse(call.args);
+  // 作用域由**原语名**决定，而原语名对应的权限门禁已经判定过了。
+  // 处理器不自己去查授权集 —— 那样权限逻辑就散到了原语实现里。
+  final crossAgent = call.name == 'data.queryAll';
+  return data.query(call.pluginId, query, crossAgent: crossAgent);
+}
+
+/// `data.entities` —— 自省可查询的实体与列。
+///
+/// 有了它插件不必靠文档猜：宿主加了实体、加了列，插件立刻能用。
+/// 这是"自由度"里容易被忽略的一半 —— **能发现**和**能使用**一样重要。
+Future<Object?> handleDataEntities(PrimitiveCall call) async {
+  final data = call.require<HostDataAccess>();
+  return <String, dynamic>{'entities': data.describeEntities()};
+}
 
 Future<Object?> handleAgentStateGet(PrimitiveCall call) async {
   final state = call.require<HostAgentState>();

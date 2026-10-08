@@ -46,6 +46,8 @@ export 'src/common/semver.dart';
 export 'src/manifest/manifest.dart';
 // 记忆实现接口：插件将来要实现它，所以是公开契约
 export 'src/memory/memory_provider.dart';
+// 声明式数据查询：插件读数据的唯一入口（见 docs/20 §4）
+export 'src/data/data_query.dart';
 export 'src/manifest/surface.dart';
 export 'src/manifest/parser.dart';
 export 'src/manifest/theme.dart';

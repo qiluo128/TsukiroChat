@@ -45,6 +45,17 @@ class AgentRepository {
   final AppDatabase _db;
   Database get _d => _db.db;
 
+  /// 执行一条**已经编译好**的查询。
+  ///
+  /// 只给 `data.*` 用。SQL 由内核的 DataQueryCompiler 生成
+  /// （列白名单、作用域注入、limit 夹取都在那边做完），
+  /// 宿主这边只剩执行 —— 薄到没什么可错的。
+  Future<List<Map<String, dynamic>>> rawQuery(
+    String sql,
+    List<Object?> args,
+  ) =>
+      _d.rawQuery(sql, args);
+
   Future<List<Agent>> list() async {
     final rows = await _d.rawQuery('''
       SELECT a.*,
@@ -776,12 +787,15 @@ class SettingsRepository {
 /// 界面层注入这一个对象就够了，不用记住五个 repository 的名字。
 class Repos {
   Repos(AppDatabase db)
-      : agents = AgentRepository(db),
+      : _db = db,
+        agents = AgentRepository(db),
         conversations = ConversationRepository(db),
         messages = MessageRepository(db),
         memories = MemoryRepository(db),
         providers = ProviderRepository(db),
         settings = SettingsRepository(db);
+
+  final AppDatabase _db;
 
   final AgentRepository agents;
   final ConversationRepository conversations;
@@ -789,6 +803,17 @@ class Repos {
   final MemoryRepository memories;
   final ProviderRepository providers;
   final SettingsRepository settings;
+
+  /// 执行一条**已经编译好**的查询。
+  ///
+  /// 只给 `data.*` 用。SQL 由内核的 DataQueryCompiler 生成
+  /// （列白名单、作用域注入、limit 夹取都在那边做完），
+  /// 宿主这边只剩执行 —— 薄到没什么可错的。
+  Future<List<Map<String, dynamic>>> rawQuery(
+    String sql,
+    List<Object?> args,
+  ) =>
+      _db.db.rawQuery(sql, args);
 
   /// 首次启动的初始化。
   ///

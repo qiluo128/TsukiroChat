@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
 
 import '../plugin/host_services_impl.dart';
+import '../services/data_access.dart';
 import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
 import '../plugin/plugin_host.dart';
@@ -146,7 +147,12 @@ final Provider<PrimitiveRegistry> primitiveRegistryProvider = Provider<Primitive
     ..put<HookBus>(ref.watch(hookBusProvider))
     ..put<HostChatContext>(ref.watch(chatContextProvider))
     ..put<HostAgentState>(ref.watch(agentStateServiceProvider))
-    ..put<HostPluginConfig>(AppPluginConfig(repos: ref.watch(reposProvider.future)));
+    ..put<HostPluginConfig>(AppPluginConfig(repos: ref.watch(reposProvider.future)))
+    // 数据访问：SQL 由内核编译（可脱离数据库穷尽单测），宿主只负责执行
+    ..put<HostDataAccess>(AppDataAccess(
+      repos: ref.watch(reposProvider.future),
+      chat: ref.watch(chatContextProvider),
+    ));
 
   // model.chat 用的模型网关。
   //

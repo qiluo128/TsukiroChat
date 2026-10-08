@@ -9,6 +9,7 @@
 library;
 
 import '../agent/chat_message.dart';
+import '../data/data_query.dart';
 
 // ─────────────────────────── 系统 ───────────────────────────
 
@@ -296,6 +297,33 @@ abstract class HostScheduler {
 ///
 /// 要求插件自己传会话 id 会很难用：插件根本不知道宿主界面上开着哪个对话，
 /// 而且它在按钮被点的那一刻也拿不到。所以由宿主维护"当前对话"。
+/// 数据访问。宿主实现；插件通过 `data.*` 原语使用。
+///
+/// 接口收 [DataQuery] + [DataScope] 而不是 SQL ——
+/// **宿主自己也不知道插件想要什么 SQL**，它只知道插件想要什么数据。
+/// 编译（拼 SQL）在内核里做，见 [DataQueryCompiler]。
+abstract class HostDataAccess {
+  /// 执行查询。
+  ///
+  /// **[pluginId] 是必需的** —— 作用域与权限由宿主按调用方解析，
+  /// 插件自己指定不了。这是刻意的：
+  /// 作用域是**安全决定**，而安全决定不该由被检查的一方提供参数。
+  ///
+  /// 返回 `{rows: [...], scope: 'ownAgent'|'all'|'none', limit: n}`。
+  /// `scope` 让插件能分清"没有数据"和"没有权限"。
+  /// [crossAgent] 由内核按**原语名**给出 —— 门禁已经判定过对应权限。
+  Future<Map<String, dynamic>> query(
+    String pluginId,
+    DataQuery query, {
+    bool crossAgent = false,
+  });
+
+  /// 自省：可查询的实体与列。
+  ///
+  /// 有了它，插件不必靠文档猜 —— 宿主加了实体它立刻能用。
+  List<Map<String, dynamic>> describeEntities();
+}
+
 abstract class HostSurfaceController {
   Future<bool> open(String pluginId, String surfaceId);
   Future<bool> update(String pluginId, String surfaceId, Map<String, dynamic> state);

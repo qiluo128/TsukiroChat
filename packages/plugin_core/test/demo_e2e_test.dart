@@ -634,11 +634,13 @@ void main() {
         'notification', 'location', 'net', 'ui', 'state', 'crypto', 'a11y',
         'screen', 'model', 'tool', 'event', 'log', 'mcp',
         'context', 'message', 'schedule', 'host', 'primitive', 'hook', 'slot',
+        'data', 'memory', 'surface', 'config', 'agent', 'chat',
       ]));
 
       expect(rig.registry.length, greaterThan(100));
-      expect(rig.registry.implementedCount, 23,
-          reason: '基础原语、自省原语、状态/记忆和 Surface 原语');
+      expect(rig.registry.implementedCount, 26,
+          reason: '基础原语、自省原语、状态/记忆、Surface，'
+              '以及 data.query / data.queryAll / data.entities');
     });
 
     test('自省：插件能在运行期问宿主支持什么', () async {

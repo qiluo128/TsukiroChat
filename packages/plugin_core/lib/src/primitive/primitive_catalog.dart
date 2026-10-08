@@ -351,6 +351,36 @@ final List<_E> _entries = <_E>[
         'required': <String>['messages'],
         'additionalProperties': false,
       }),
+  // ─────────────── 数据访问（docs/20 §4） ───────────────
+  //
+  // 插件读宿主数据的**唯一入口**。不给 SQL：schema 会变成对外契约、
+  // 行级权限无处施加、没有成本边界、审计粒度丢失。
+  _E('data.query', '按声明式条件查询宿主数据（自动按作用域过滤）',
+      permission: 'data.read',
+      schema: <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{
+          'entity': <String, dynamic>{
+            'type': 'string',
+            'enum': <String>['agent', 'conversation', 'message', 'memory'],
+          },
+          'where': <String, dynamic>{'type': 'object'},
+          'order': <String, dynamic>{'type': 'string'},
+          'limit': <String, dynamic>{'type': 'number', 'minimum': 1, 'maximum': 200},
+          'offset': <String, dynamic>{'type': 'number', 'minimum': 0},
+          'select': <String, dynamic>{'type': 'array'},
+        },
+        'required': <String>['entity'],
+      }),
+  // **用两个原语让门禁自己区分作用域。**
+  //
+  // 处理器不需要去读"这个插件被授予了哪些权限" —— 那要门禁开一个
+  // 查询接口，而权限判断散到原语实现里正是最容易漏的地方。
+  // 拆成两个原语之后，权限检查仍然只有门禁一处。
+  _E('data.queryAll', '按声明式条件查询**所有**智能体的数据',
+      permission: 'data.read.crossAgent'),
+  _E('data.entities', '列出可查询的实体与列（自省）', permission: 'data.read'),
+
   _E('model.embed', '文本向量化', permission: 'model.chat'),
   _E('model.vision', '图片理解', permission: 'model.chat'),
 

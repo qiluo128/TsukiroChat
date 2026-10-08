@@ -82,6 +82,25 @@ const Map<String, PermissionSpec> permissionCatalog = <String, PermissionSpec>{
   'memory.write': PermissionSpec('memory.write', PermissionLevel.install, '写入当前智能体的长期记忆'),
   'ui.surface': PermissionSpec('ui.surface', PermissionLevel.install, '创建和更新插件 Surface'),
 
+  // ─────────────── 数据访问（docs/20 §4 / §7） ───────────────
+
+  'data.read': PermissionSpec(
+    'data.read',
+    PermissionLevel.install,
+    '读取本智能体的对话、记忆与配置',
+  ),
+  // **confirm 级，不是 install 级。**
+  //
+  // 跨智能体读取不是越界 —— 想把几个角色的记忆打通做统一摘要是正经需求。
+  // 但它是"比默认更大的权限"，所以要每次当场确认，不能装的时候一并同意。
+  //
+  // 描述文案用用户能懂的话：这句话是给用户看的。
+  'data.read.crossAgent': PermissionSpec(
+    'data.read.crossAgent',
+    PermissionLevel.confirm,
+    '插件会访问除插件安装的智能体外其他智能体的信息',
+  ),
+
   'ui.overlay': PermissionSpec('ui.overlay', PermissionLevel.install, '在宿主界面上叠加覆盖层'),
 
   // ── 模型：消耗用户点数，安装弹窗必须提示 ──
@@ -262,6 +281,8 @@ const Map<String, String> _exactPrimitivePermissions = <String, String>{
   'agent.model.chat': 'model.chat',
   'memory.list': 'memory.read',
   'memory.add': 'memory.write',
+  'data.query': 'data.read',
+  'data.entities': 'data.read',
   'surface.open': 'ui.surface',
   'surface.update': 'ui.surface',
   'surface.close': 'ui.surface',
@@ -284,6 +305,7 @@ const Map<String, String> _domainDefaultPermissions = <String, String>{
   'chat': 'chat.read',
   'agent': 'agent.state.read',
   'memory': 'memory.read',
+  'data': 'data.read',
 };
 
 /// 某原语（如 `sys.time`、`fs.read`）所需的权限名。
