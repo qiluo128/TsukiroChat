@@ -780,11 +780,14 @@ class SettingsRepository {
     final rows = await _d.query(
       'settings',
       columns: <String>['key'],
-      where: 'key LIKE ?',
-      // 转义 LIKE 的通配符：插件 id 里理论上不会有 % 和 _，
-      // 但转义一下不花钱，而不转义就是个隐患
+      // **必须带 ESCAPE 子句**，否则反斜杠只是普通字符，
+      // 转义反而会变成"字面量反斜杠 + 通配符"，匹配出错误的结果。
+      //
+      // 原来这里没有 ESCAPE，而且把单个反斜杠换成了两个（想转义却加倍了）。
+      // 现在前缀恰好不含 % 和 _，所以没出过事 —— 但那是运气，不是设计。
+      where: r"key LIKE ? ESCAPE '\'",
       whereArgs: <Object?>[
-        '${prefix.replaceAll(r'\\', r'\\\\').replaceAll('%', r'\\%').replaceAll('_', r'\\_')}%',
+        '${prefix.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_')}%',
       ],
       orderBy: 'key ASC',
     );

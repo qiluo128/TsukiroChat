@@ -251,6 +251,13 @@ class UiNode {
   static const int maxDepth = 12;
 
   /// 整棵树的最大节点数。
+  ///
+  /// **这个数字必须真的被比较。** 曾经它只被声明、被计数，
+  /// 却没有任何地方拿它做判断 —— 于是一棵 21 万节点的树
+  /// 能正常解析完（实测），而深度 12 × 每层 60 个子节点的
+  /// 上限组合足够把内存打爆。
+  ///
+  /// 深度和子节点数**各自**设限是不够的：两者相乘才是一棵树的大小。
   static const int maxNodes = 400;
 
   /// 单个节点的最大子节点数。
@@ -259,8 +266,11 @@ class UiNode {
   /// 文本最大长度（按字符）。
   static const int maxTextLength = 2000;
 
-  /// 单次 update 的最大字节数。
-  static const int maxPayloadBytes = 256 * 1024;
+  // 这里曾经有个 maxPayloadBytes = 256KB 的常量，但**从来没被用过** ——
+  // 一个声明了却不生效的上限比没有更糟：读代码的人会以为它拦得住。
+  //
+  // 载荷大小实际由 Bridge 的 1MB UTF-8 上限兜住（docs/07），
+  // 而节点数由 maxNodes 兜住。不需要第三个数字。
 
   // ══════════════════ 解析 ══════════════════
 
@@ -286,6 +296,15 @@ class UiNode {
       );
     }
     counter.count++;
+    // **总节点数**。只限制深度是不够的 —— 深度 12 × 每层 60 个子节点
+    // 相乘起来能到天文数字。
+    if (counter.count > maxNodes) {
+      throw TsukiroException(
+        TsukiroErrorCode.invalidArgs,
+        'UI 树超过 $maxNodes 个节点。请把内容分页或折叠，'
+        '不要一次画出来。',
+      );
+    }
 
     final typeName = raw['type']?.toString();
     if (typeName == null || typeName.isEmpty) {

@@ -45,11 +45,16 @@ class AppPluginState implements HostPluginState {
   @override
   Future<void> set(String pluginId, String key, Object? value) async {
     final encoded = jsonEncode(value);
-    if (encoded.length > maxValueBytes) {
+    // **按 UTF-8 字节数算，不是 String.length。**
+    //
+    // String.length 是 UTF-16 码元数：一个汉字算 1，但落盘是 3 字节。
+    // 用 length 的话"64KB 上限"对中文实际是 192KB —— 名字和提示都在说谎。
+    final bytes = utf8.encode(encoded).length;
+    if (bytes > maxValueBytes) {
       throw TsukiroException(
         TsukiroErrorCode.invalidArgs,
         '插件状态单个值上限 ${maxValueBytes ~/ 1024}KB，'
-        '这次要写 ${encoded.length ~/ 1024}KB。请拆成多个键。',
+        '这次要写 ${bytes ~/ 1024}KB。请拆成多个键。',
       );
     }
     await (await _repos).settings.set(_keyOf(pluginId, key), encoded);

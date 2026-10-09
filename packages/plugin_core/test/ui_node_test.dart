@@ -114,6 +114,35 @@ void main() {
       );
     });
 
+    test('**总节点数有上限** —— 只限深度是不够的', () {
+      // 自查时实测到的：这个形状曾经能解析出 219,662 个节点，
+      // 而 maxNodes 声明的是 400。深度和子节点数各自设限不够，
+      // 两者**相乘**才是一棵树的大小。
+      //
+      // 深度 12 × 每层 60 个子节点会直接把内存打爆。
+      Map<String, dynamic> wide(int depth) => <String, dynamic>{
+            'type': 'column',
+            'children': List<Map<String, dynamic>>.generate(
+              depth == 0 ? 1 : 60,
+              (i) => depth >= 3
+                  ? <String, dynamic>{'type': 'text', 'text': 'x'}
+                  : wide(depth + 1),
+            ),
+          };
+
+      expect(() => UiNode.parse(wide(0)), throwsA(isA<TsukiroException>()));
+    });
+
+    test('刚好在节点数上限内可以解析', () {
+      // maxNodes=400。60 个叶子 + 1 个根 = 61 个节点，远在限制内
+      final tree = node('column', <String, dynamic>{
+        'children': List<Map<String, dynamic>>.generate(
+          60,
+          (i) => node('text', <String, dynamic>{'text': '$i'}),
+        ),
+      });
+      expect(() => UiNode.parse(tree), returnsNormally);
+    });
     test('children 里混进非对象要报错', () {
       expect(
         () => UiNode.parse(node('column', <String, dynamic>{
