@@ -27,6 +27,9 @@ dependencies:
   sqflite: ^2.4.1
   path: ^1.9.0
   path_provider: ^2.1.5
+  # 换头像/换背景要能选图。系统相册选择器在 Android 13+ 不需要权限，
+  # 低版本走 ACTION_GET_CONTENT 也不需要 —— 所以不动 AndroidManifest。
+  image_picker: ^1.1.2
   shared_preferences: ^2.3.3
 
   intl: ^0.20.2

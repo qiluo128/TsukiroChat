@@ -17,6 +17,7 @@ import '../plugin/host_services_impl.dart';
 import '../plugin/native_window.dart';
 import '../plugin/plugin_state.dart';
 import '../services/capability_service.dart';
+import '../services/media_store.dart';
 import '../services/data_access.dart';
 import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
@@ -127,6 +128,12 @@ final Provider<HookBus> hookBusProvider = Provider<HookBus>((ref) {
 });
 
 /// 能力市场注册表（插件提供能力、别的插件调用）。
+/// 用户选的图片落盘的地方（头像 / 背景）。
+///
+/// **必须复制进应用私有目录**：image_picker 给的是临时路径，
+/// 系统随时会清缓存 —— 今天选的头像下周就变破图了。
+final mediaStoreProvider = FutureProvider<MediaStore>((ref) => MediaStore.open());
+
 final Provider<CapabilityRegistry> capabilityRegistryProvider =
     Provider<CapabilityRegistry>((ref) => CapabilityRegistry());
 

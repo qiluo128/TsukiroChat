@@ -10,6 +10,8 @@ import 'package:plugin_core/plugin_core.dart';
 import '../data/models.dart';
 import '../providers/app_providers.dart';
 import '../providers/plugin_providers.dart';
+import 'agent_avatar.dart';
+import 'appearance_pickers.dart';
 import 'plugin_slot.dart';
 import '../theme/app_theme.dart';
 import 'settings/model_picker_page.dart';
@@ -60,6 +62,38 @@ class _AgentEditPageState extends ConsumerState<AgentEditPage> {
     _worldBook.text = a.persona.worldBook ?? '';
   }
 
+  /// 换头像。
+  ///
+  /// 选完**先改内存再落库**：用户从面板回到这一页应该立刻看到新头像，
+  /// 而不是等一次数据库往返。
+  Future<void> _pickAvatar() async {
+    final agent = _agent;
+    if (agent == null) return;
+
+    final media = await ref.read(mediaStoreProvider.future);
+    if (!mounted) return;
+
+    final choice = await showAvatarPicker(
+      context,
+      media: media,
+      agentId: agent.id,
+      current: agent.avatarPath,
+    );
+    if (choice == null || !mounted) return;
+
+    switch (choice) {
+      case AvatarEmoji(:final emoji):
+        setState(() => agent.avatarPath = AvatarSpec.encodeEmoji(emoji));
+      case AvatarFile(:final path):
+        setState(() => agent.avatarPath = AvatarSpec.encodeFile(path));
+      case AvatarReset():
+        await media.deleteAvatar(agent.id);
+        if (!mounted) return;
+        setState(() => agent.avatarPath = null);
+    }
+    _mark();
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
@@ -92,6 +126,31 @@ class _AgentEditPageState extends ConsumerState<AgentEditPage> {
             padding: EdgeInsets.symmetric(vertical: t.spacing.section.toDouble() / 2),
             children: <Widget>[
               _SectionTitle('基本'),
+
+              // 头像放在名字上面 —— 改外观的入口应该在改内容之前，
+              // 而且它一眼就能看出改的是哪个智能体
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: t.spacing.page.toDouble()),
+                child: Row(
+                  children: <Widget>[
+                    AgentAvatar(
+                      name: _name.text.trim().isEmpty ? '?' : _name.text.trim(),
+                      avatarPath: _agent?.avatarPath,
+                      size: 56,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickAvatar,
+                        icon: const Icon(Icons.face_retouching_natural_outlined, size: 18),
+                        label: const Text('更换头像'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: t.spacing.page.toDouble()),
                 child: TextField(

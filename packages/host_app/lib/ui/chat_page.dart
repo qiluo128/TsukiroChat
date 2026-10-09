@@ -4,6 +4,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'chat_background.dart';
+
 import '../data/models.dart';
 import '../providers/app_providers.dart';
 import '../providers/chat_controller.dart';
@@ -76,6 +78,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final agent =
         agentId == null ? null : ref.watch(agentProvider(agentId)).valueOrNull;
 
+    // 背景跟着设置走。用 watch 而不是 read —— 用户在设置页改完、
+    // 回到聊天页应该立刻看到，不该等重启。
+    final background = ref.watch(chatBackgroundProvider).buildLayer(context);
+
     ref.listen<AsyncValue<List<StoredChatMessage>>>(
       messagesProvider(widget.conversationId),
       (_, next) {
@@ -113,22 +119,31 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           ),
 
           Expanded(
-            child: messagesAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text(userFacingError(e))),
-              data: (messages) => messages.isEmpty
-                  ? _EmptyState(
-                      agentName: agent?.name,
-                      onPick: _fillInput,
-                    )
-                  : _MessageList(
-                      controller: _scroll,
-                      messages: messages,
-                      streaming: streaming,
-                      showReasoning: _showReasoning,
-                      agentInitial: agent?.initial ?? '?',
-                      onAction: (m, action) => _handleMessageAction(m, action),
-                    ),
+            // 背景只垫在消息区后面，不铺到 AppBar 和输入框 ——
+            // 那两处要维持自己的材质，不然文字会看不清。
+            child: Stack(
+              children: <Widget>[
+                if (background != null)
+                  Positioned.fill(child: background),
+                messagesAsync.when(
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => Center(child: Text(userFacingError(e))),
+                  data: (messages) => messages.isEmpty
+                      ? _EmptyState(
+                          agentName: agent?.name,
+                          onPick: _fillInput,
+                        )
+                      : _MessageList(
+                          controller: _scroll,
+                          messages: messages,
+                          streaming: streaming,
+                          showReasoning: _showReasoning,
+                          agentInitial: agent?.initial ?? '?',
+                          agentAvatarPath: agent?.avatarPath,
+                          onAction: (m, action) => _handleMessageAction(m, action),
+                        ),
+                ),
+              ],
             ),
           ),
           _Composer(
@@ -278,6 +293,7 @@ class _MessageList extends StatelessWidget {
     required this.showReasoning,
     required this.agentInitial,
     required this.onAction,
+    this.agentAvatarPath,
   });
 
   final ScrollController controller;
@@ -286,6 +302,7 @@ class _MessageList extends StatelessWidget {
   final bool showReasoning;
   final String agentInitial;
   final void Function(StoredChatMessage message, MessageAction action) onAction;
+  final String? agentAvatarPath;
 
   @override
   Widget build(BuildContext context) {
@@ -305,6 +322,7 @@ class _MessageList extends StatelessWidget {
           key: ValueKey<String>(m.id),
           message: m,
           agentInitial: agentInitial,
+          agentAvatarPath: agentAvatarPath,
           isLastAssistant: isLastAssistant,
           onAction: (action) => onAction(m, action),
           // 只有正在流式输出那一条才吃缓冲

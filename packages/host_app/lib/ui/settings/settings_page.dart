@@ -14,6 +14,8 @@ import '../../providers/theme_provider.dart';
 import '../plugin_slot.dart';
 import 'plugin_page.dart';
 import '../../theme/app_theme.dart';
+import '../appearance_pickers.dart';
+import '../chat_background.dart';
 import 'model_config_page.dart';
 
 class SettingsPage extends ConsumerWidget {
@@ -97,6 +99,40 @@ class SettingsPage extends ConsumerWidget {
             },
           ),
 
+          // ── 聊天背景 ──
+          Consumer(
+            builder: (context, ref, _) {
+              final bg = ref.watch(chatBackgroundProvider);
+              return ListTile(
+                leading: const Icon(Icons.wallpaper_outlined),
+                title: const Text('聊天背景'),
+                subtitle: Text(_backgroundLabel(bg), style: const TextStyle(fontSize: 12.5)),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () async {
+                  final media = await ref.read(mediaStoreProvider.future);
+                  if (!context.mounted) return;
+                  final picked = await showChatBackgroundPicker(
+                    context,
+                    media: media,
+                    current: bg,
+                  );
+                  if (picked == null) return;
+                  // 落库失败要说出来 —— 用户改完背景却"下次打开又没了"
+                  // 是最让人困惑的失败
+                  try {
+                    await ref.read(chatBackgroundProvider.notifier).set(picked);
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('保存背景失败：$e')),
+                      );
+                    }
+                  }
+                },
+              );
+            },
+          ),
+
           Divider(height: 24, color: t.divider, indent: t.spacing.page.toDouble()),
 
           const _SectionTitle('关于'),
@@ -175,5 +211,22 @@ class _SectionTitle extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 背景当前值的可读说明。
+///
+/// 放文件末尾而不是类里：它不依赖任何状态，是个纯函数，
+/// 放类里反而要多写一个 this 才能调用。
+String _backgroundLabel(ChatBackground bg) {
+  switch (bg.kind) {
+    case ChatBackgroundKind.theme:
+      return '跟随主题';
+    case ChatBackgroundKind.color:
+      return '纯色';
+    case ChatBackgroundKind.gradient:
+      return '渐变';
+    case ChatBackgroundKind.image:
+      return '自定义图片';
   }
 }

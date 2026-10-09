@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import '../data/models.dart';
 import '../providers/chat_controller.dart';
 import '../theme/app_theme.dart';
+import 'agent_avatar.dart';
 
 /// 消息上能做的操作。
 enum MessageAction { copy, retract, edit, regenerate }
@@ -25,6 +26,7 @@ class MessageBubble extends StatelessWidget {
     this.showReasoning = false,
     this.onAction,
     this.isLastAssistant = false,
+    this.agentAvatarPath,
   });
 
   final StoredChatMessage message;
@@ -47,6 +49,9 @@ class MessageBubble extends StatelessWidget {
   /// 气泡只负责"用户想干什么"，怎么干（落库、发钩子、重跑模型）
   /// 属于控制器。而且「重说」作用于整轮，不该由单个气泡决定。
   final void Function(MessageAction action)? onAction;
+
+  /// 智能体的头像标识（emoji:… / file:… / null=首字）。
+  final String? agentAvatarPath;
 
   /// 是不是这条对话里**最后一条**助手消息。
   ///
@@ -76,7 +81,8 @@ class MessageBubble extends StatelessWidget {
             mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              if (!isUser) _Avatar(name: agentInitial),
+              if (!isUser)
+                AgentAvatar(name: agentInitial, avatarPath: agentAvatarPath),
               if (!isUser) const SizedBox(width: 8),
               Flexible(
                 child: GestureDetector(
@@ -431,37 +437,3 @@ class _ReasoningPanel extends StatelessWidget {
   }
 }
 
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.name});
-
-  final String name;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-    // 名字可能是空的；用 runes.first 而不是 [0] —— 后者会把 emoji
-    // 或某些中文字截成半个码点，渲染出乱码方块
-    final trimmed = name.trim();
-    final initial = trimmed.isEmpty ? '?' : String.fromCharCode(trimmed.runes.first);
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: <Color>[t.primary.withValues(alpha: 0.85), t.primary.withValues(alpha: 0.55)],
-        ),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initial,
-        // 不能是 const —— color 来自令牌，亮主色下要换成深色前景
-        style: TextStyle(
-          fontSize: 14,
-          color: t.onPrimary,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
