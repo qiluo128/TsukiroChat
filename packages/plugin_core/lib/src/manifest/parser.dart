@@ -9,6 +9,7 @@
 ///     为 true 时才可用。
 library;
 
+import '../capability/capability.dart';
 import 'dart:convert';
 
 import '../common/semver.dart';
@@ -492,6 +493,7 @@ ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
   final ui = _parseUi(raw['ui'], errors);
   final pages = _parsePages(raw['pages'], errors);
   final surfaces = _parseSurfaces(raw['surfaces'], errors);
+  final capabilities = _parseCapabilities(raw['capabilities'], errors);
   final themes = _parseThemes(raw['theme'] ?? raw['themes'], errors);
   final reserved = <String, dynamic>{};
 
@@ -524,9 +526,48 @@ ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
     ui: ui,
     pages: pages,
     surfaces: surfaces,
+    capabilities: capabilities,
     themes: themes,
     rawReserved: reserved,
   );
+}
+
+/// 解析 provides.capabilities（能力市场）。
+///
+/// 畸形的声明是**打包错误**，会让整个清单校验失败（与其它 provides 段一致）。
+/// 不静默少提供一个：那会让调用方拿到「找不到能力」，
+/// 而真正的原因在几层之外。作者该在安装时就被告知。
+List<CapabilityDeclaration> _parseCapabilities(
+  Object? raw,
+  List<ManifestIssue> errors,
+) {
+  if (raw == null) return const <CapabilityDeclaration>[];
+  if (raw is! List) {
+    errors.add(const ManifestIssue('provides.capabilities', '必须是数组'));
+    return const <CapabilityDeclaration>[];
+  }
+
+  final out = <CapabilityDeclaration>[];
+  final seen = <String>{};
+  for (var i = 0; i < raw.length; i++) {
+    final parsed = CapabilityDeclaration.parse(raw[i]);
+    if (parsed == null) {
+      errors.add(ManifestIssue(
+        'provides.capabilities[$i]',
+        '需要 name 与 handler',
+      ));
+      continue;
+    }
+    if (!seen.add(parsed.name)) {
+      errors.add(ManifestIssue(
+        'provides.capabilities[$i].name',
+        '能力名「${parsed.name}」重复',
+      ));
+      continue;
+    }
+    out.add(parsed);
+  }
+  return out;
 }
 
 List<SurfaceDeclaration> _parseSurfaces(Object? raw, List<ManifestIssue> errors) {

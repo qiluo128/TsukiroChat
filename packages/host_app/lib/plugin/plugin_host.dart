@@ -69,9 +69,11 @@ class PluginHost extends ChangeNotifier {
     required this.audit,
     SlotRegistry? slotRegistry,
     SurfaceRegistry? surfaceRegistry,
+    CapabilityRegistry? capabilityRegistry,
     this.settings,
   })  : slotRegistry = slotRegistry ?? SlotRegistry(),
-        surfaceRegistry = surfaceRegistry ?? SurfaceRegistry();
+        surfaceRegistry = surfaceRegistry ?? SurfaceRegistry(),
+        capabilityRegistry = capabilityRegistry ?? CapabilityRegistry();
 
   final ToolRegistry toolRegistry;
   final Gatekeeper gatekeeper;
@@ -87,6 +89,9 @@ class PluginHost extends ChangeNotifier {
   /// 界面渲染时查的是它，如果这里 new 一个新的，界面上永远看不到插件 UI。
   final SlotRegistry slotRegistry;
   final SurfaceRegistry surfaceRegistry;
+
+  /// 能力市场：别的插件提供的能力登记在这，供调用方查找。
+  final CapabilityRegistry capabilityRegistry;
 
   HostAgentState? get agentState => primitiveRegistry.services.get<HostAgentState>();
 
@@ -208,6 +213,14 @@ class PluginHost extends ChangeNotifier {
     // 插槽：未知插槽**不报错也不注册**（只记一条日志）。
     // 这是刻意的 —— 未知插槽静默忽略，插件往新版宿主才有的插槽放东西时，
     // 在旧宿主上只是不显示，而不是装都装不上。
+    // 能力市场：把插件提供的能力登记进去，别的插件才找得到
+    capabilityRegistry.registerProvider(
+      plugin.id,
+      providerVersion: plugin.manifest.version,
+      providerName: plugin.manifest.name,
+      declarations: plugin.manifest.provides.capabilities,
+    );
+
     final unknownSlots = slotRegistry.registerPlugin(plugin.manifest);
     surfaceRegistry.registerPlugin(plugin.manifest);
     if (unknownSlots.isNotEmpty) {
@@ -602,6 +615,19 @@ class PluginHost extends ChangeNotifier {
   ///
   /// [handler] 是清单里的 handler 路径（`handlers/get_time.js`）——
   /// 插件侧就是按这个键注册的，所以直接透传，不做映射。
+  /// 调用某个提供方的一个能力 handler。
+  ///
+  /// **复用 [invokeTool]** —— 能力 handler 和工具 handler 在插件侧
+  /// 是同一类东西（一个注册过的 JS 函数），各种失败态
+  /// （未安装 / 未运行 / 未就绪 / 抛异常）的处理也完全一样。
+  /// 分两条路只会让其中一条慢慢长歪。
+  Future<ToolInvocationResult> invokeCapability(
+    String providerId,
+    String handler,
+    Map<String, dynamic> args,
+  ) =>
+      invokeTool(providerId, handler, args);
+
   Future<ToolInvocationResult> invokeTool(
     String pluginId,
     String handler,

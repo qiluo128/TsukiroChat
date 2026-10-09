@@ -15,6 +15,7 @@ import '../common/errors.dart';
 import '../hook/hook_bus.dart';
 import '../sandbox/path_guard.dart';
 import '../data/data_query.dart';
+import '../capability/capability.dart';
 import '../registry/slot_registry.dart';
 import '../ui/ui_node.dart';
 import 'host_services.dart';
@@ -27,6 +28,9 @@ const Map<String, PrimitiveHandler> demoPrimitiveHandlers = <String, PrimitiveHa
   'chat.lastMessage': handleChatLastMessage,
   'chat.info': handleChatInfo,
   // ─────────────── 数据访问（docs/20 §4） ───────────────
+  'capability.list': handleCapabilityList,
+  'capability.invoke': handleCapabilityInvoke,
+
   'slot.list': handleSlotList,
 
   'state.get': handleStateGet,
@@ -386,6 +390,24 @@ UiNode _requireRoot(PrimitiveCall call) {
 /// 插件不必翻文档猜插槽名，也不会因为宿主加了个位置而不知道。
 ///
 /// 「能发现」和「能使用」一样重要 —— 这是自由度里容易被忽略的一半。
+/// capability.list —— 我这个插件能调用哪些能力。
+Future<Object?> handleCapabilityList(PrimitiveCall call) async {
+  final caps = call.require<HostCapability>();
+  final list = caps.availableTo(call.pluginId);
+  return <String, dynamic>{'capabilities': list, 'count': list.length};
+}
+
+/// capability.invoke —— 调另一个插件的能力。
+///
+/// 处理器**不自己判权限** —— 那在 HostCapability 里按
+/// (调用方, 提供方, 名字) 三元组判。处理器只负责转发与保形。
+Future<Object?> handleCapabilityInvoke(PrimitiveCall call) async {
+  final caps = call.require<HostCapability>();
+  final request = CapabilityRequest.parse(call.args);
+  final result = await caps.invoke(call.pluginId, request);
+  return result.toJson();
+}
+
 Future<Object?> handleSlotList(PrimitiveCall call) async {
   final slots = call.require<SlotRegistry>();
   final tree = slots.tree();

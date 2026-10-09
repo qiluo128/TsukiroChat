@@ -7,6 +7,7 @@
 /// （[ProvidesSpec.rawReserved]），保证 manifest 一次留全、未来解析不破坏兼容。
 library;
 
+import '../capability/capability.dart';
 import '../common/semver.dart';
 import '../permission/permission.dart';
 import 'surface.dart';
@@ -243,6 +244,12 @@ class ProvidesSpec {
     this.surfaces = const <SurfaceDeclaration>[],
     this.themes = const <ThemeDeclaration>[],
 
+    /// 这个插件**提供给别的插件**的能力。
+    ///
+    /// 有了它，宿主不必为每个垂直场景都写原语：
+    /// 做向量库的插件提供检索，做记忆的插件调用它。
+    this.capabilities = const <CapabilityDeclaration>[],
+
     this.rawReserved = const <String, dynamic>{},
   });
 
@@ -253,6 +260,9 @@ class ProvidesSpec {
 
   /// L1 美化包。**已校验为强类型** —— 令牌名一定在目录里，取值一定合法。
   final List<ThemeDeclaration> themes;
+
+  /// 提供给别的插件的能力。
+  final List<CapabilityDeclaration> capabilities;
 
   /// 尚未建模但需原样保留的段：`overlays` / `skills` / `personas` /
   /// `mcp` / `memory` / `layout` / `replaces`。

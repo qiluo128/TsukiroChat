@@ -16,6 +16,7 @@ import 'package:plugin_core/plugin_core.dart';
 import '../plugin/host_services_impl.dart';
 import '../plugin/native_window.dart';
 import '../plugin/plugin_state.dart';
+import '../services/capability_service.dart';
 import '../services/data_access.dart';
 import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
@@ -125,6 +126,10 @@ final Provider<HookBus> hookBusProvider = Provider<HookBus>((ref) {
   );
 });
 
+/// 能力市场注册表（插件提供能力、别的插件调用）。
+final Provider<CapabilityRegistry> capabilityRegistryProvider =
+    Provider<CapabilityRegistry>((ref) => CapabilityRegistry());
+
 final Provider<PrimitiveRegistry> primitiveRegistryProvider = Provider<PrimitiveRegistry>((ref) {
   // 先建一个**可变的服务表**，再把它交给注册表 ——
   // `primitive.list` / `host.capabilities` 要自省 PrimitiveRegistry 本身，
@@ -152,6 +157,13 @@ final Provider<PrimitiveRegistry> primitiveRegistryProvider = Provider<Primitive
     ..put<HostAgentState>(ref.watch(agentStateServiceProvider))
     ..put<HostPluginConfig>(AppPluginConfig(repos: ref.watch(reposProvider.future)))
     // 数据访问：SQL 由内核编译（可脱离数据库穷尽单测），宿主只负责执行
+    // 能力市场：插件之间通过它互相调用（权限/超时/审计都在这一层）
+    ..put<HostCapability>(AppCapability(
+      registry: ref.watch(capabilityRegistryProvider),
+      gatekeeper: ref.watch(gatekeeperProvider),
+      hostResolver: () => ref.read(pluginHostValueProvider),
+      audit: ref.watch(auditSinkProvider),
+    ))
     // 插件自己的键值存储（按 pluginId 分区）
     ..put<HostPluginState>(AppPluginState(ref.watch(reposProvider.future)))
     // 原生窗口：插件描述界面，宿主用 Flutter 画（自动套主题）

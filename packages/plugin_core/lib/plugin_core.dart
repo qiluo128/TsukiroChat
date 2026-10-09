@@ -50,6 +50,8 @@ export 'src/memory/memory_provider.dart';
 export 'src/data/data_query.dart';
 // 运行期 UI 树：插件描述界面，宿主用 Flutter 渲染（docs/19 / 21）
 export 'src/ui/ui_node.dart';
+// 能力市场：插件提供能力、别的插件调用（docs/22）
+export 'src/capability/capability.dart';
 export 'src/manifest/surface.dart';
 export 'src/manifest/parser.dart';
 export 'src/manifest/theme.dart';

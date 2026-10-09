@@ -88,6 +88,18 @@ const Map<String, PermissionSpec> permissionCatalog = <String, PermissionSpec>{
   // 它拿不到 Flutter，只能描述界面，所以攻击面比 WebView 小得多。
   // 插件自己的存储。**不涉及用户数据** —— 里面的东西是插件自己写的，
   // 所以是 install 级（装的时候说一声就够）。
+  // 插件能力市场的窄口。
+  //
+  // 这里**只判"能不能调能力"**，具体调哪一个由宿主按参数判
+  // （权限名是 capability:<提供方>:<名字>，那是动态的）。
+  //
+  // 不把动态判断塞进门禁：门禁的价值就在于它只看静态声明的名字，
+  // 一眼能看出"这个插件能做什么"。让它解析参数会把这件事变糊。
+  'capability.invoke': PermissionSpec(
+    'capability.invoke',
+    PermissionLevel.install,
+    '调用其他插件提供的能力',
+  ),
   'state': PermissionSpec(
     'state',
     PermissionLevel.install,
@@ -298,6 +310,8 @@ const Map<String, String> _exactPrimitivePermissions = <String, String>{
   'agent.model.chat': 'model.chat',
   'memory.list': 'memory.read',
   'memory.add': 'memory.write',
+  'capability.list': 'capability.invoke',
+  'capability.invoke': 'capability.invoke',
   'state.get': 'state',
   'state.set': 'state',
   'state.delete': 'state',

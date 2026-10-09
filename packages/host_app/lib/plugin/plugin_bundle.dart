@@ -103,6 +103,10 @@ Future<PluginBundle> loadBundleFromDirectory(String directory) async {
     // 工具循环拿到的是 [RegisteredTool.handler]（清单里的文件路径），
     // 它不知道工具名 —— 用路径当键可以原样透传，不做一层映射。
     handlers[tool.handler] = await read(tool.handler);
+    for (final cap in manifest.provides.capabilities) {
+      if (handlers.containsKey(cap.handler)) continue;
+      handlers[cap.handler] = await read(cap.handler);
+    }
   }
 
   // 注意：**不**从 manifest 读插槽脚本。
@@ -151,6 +155,13 @@ Future<PluginBundle> loadBundleFromAssets(String assetDir) async {
   final handlers = <String, String>{};
   for (final tool in manifest.provides.tools) {
     handlers[tool.handler] = await rootBundle.loadString('$assetDir/${tool.handler}');
+
+    // 能力 handler 走同一套加载 —— 它和工具 handler 在插件侧
+    // 是同一类东西（一个注册过的 JS 函数）。
+    for (final cap in manifest.provides.capabilities) {
+      if (handlers.containsKey(cap.handler)) continue;
+      handlers[cap.handler] = await rootBundle.loadString('$assetDir/${cap.handler}');
+    }
   }
 
   return PluginBundle(

@@ -9,6 +9,7 @@
 library;
 
 import '../agent/chat_message.dart';
+import '../capability/capability.dart';
 import '../data/data_query.dart';
 import '../ui/ui_node.dart';
 
@@ -317,6 +318,31 @@ abstract class HostScheduler {
 ///
 /// 等 docs/20 的 per-agent 安装落地后，分区键会变成
 /// (pluginId, agentId)，接口签名不变。
+/// 能力市场：插件之间的调用。
+///
+/// **必须由宿主中介**，不能让插件直连：
+/// 权限、超时、审计、递归深度、失败隔离全在这一层。
+/// 插件直连的话这些一个都保不住。
+abstract class HostCapability {
+  /// 调用一个能力。
+  ///
+  /// [callerPluginId] 由宿主从会话里取（**不是插件自称的**）。
+  ///
+  /// **失败返回 [CapabilityResult] 而不是抛异常** —— 一次能力调用失败是
+  /// 可预期的（提供方没在跑、超时、权限不够），调用方需要能分辨是哪种。
+  Future<CapabilityResult> invoke(
+    String callerPluginId,
+    CapabilityRequest request, {
+    int depth = 0,
+  });
+
+  /// 调用方**有权限用**的能力。
+  ///
+  /// 只列出它有权调的 —— 让插件看见自己用不了的能力，
+  /// 只会诱使它去猜权限名。
+  List<Map<String, dynamic>> availableTo(String callerPluginId);
+}
+
 abstract class HostPluginState {
   /// 读。键不存在返回 null（**不是错误** —— 首次运行时读一个
   /// 还没写过的键是正常的）。

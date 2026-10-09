@@ -475,5 +475,16 @@ final List<_E> _entries = <_E>[
   _E('host.capabilities', '查询宿主综合能力（原语、钩子、插槽）'),
   _E('primitive.list', '列出宿主支持的全部原语'),
   _E('hook.phases', '列出宿主支持的钩子时机'),
+  // ─────────────── 能力市场（docs/22） ───────────────
+  //
+  // 插件 A 提供能力，插件 B 调用。宿主不必为每个垂直场景写原语。
+  //
+  // 权限是**两层**的：
+  //   capability.invoke              门禁按原语名静态判（这个插件能不能调能力）
+  //   capability:<提供方>:<名字>      宿主按参数动态判（能不能调这一个）
+  _E('capability.list', '列出可调用的插件能力'),
+  _E('capability.invoke', '调用另一个插件提供的能力',
+      permission: 'capability.invoke'),
+
   _E('slot.list', '列出宿主预埋的 UI 插槽'),
 ];
