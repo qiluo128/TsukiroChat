@@ -45,6 +45,17 @@ class PluginSlot extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // ══════════════════ 在这里声明自己 ══════════════════
+    //
+    // **这是「加插槽不用改内核」的落地点。**
+    //
+    // 界面里写一行 `PluginSlot(slot: 'newpage.thing')`，那个位置就存在了 ——
+    // 内核的 knownSlots 只是基线，不再是白名单。
+    //
+    // 在 build 里做副作用听起来不干净，但 declare 是**幂等**的
+    // （Registry 里判了重复），而且它本来就该跟着"界面渲染到哪"走。
+    ref.read(slotRegistryProvider).declare(slot);
+
     final host = ref.watch(pluginHostValueProvider);
     if (host == null) return emptyPlaceholder ?? const SizedBox.shrink();
 

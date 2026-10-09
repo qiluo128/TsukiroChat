@@ -131,7 +131,7 @@ void main() {
       expect(rig.slots.uiIn('chat.toolbar').single.id, 't');
     });
 
-    test('未知插槽被静默忽略（不算安装失败）但记审计', () {
+    test('格式对的插槽即使界面没声明也照样注册', () {
       final rig = makeRig();
       final manifest = parseManifest(<String, dynamic>{
         'manifestVersion': 1,
@@ -147,13 +147,48 @@ void main() {
         },
       }).manifest!;
 
-      final unknown = rig.slots.registerPlugin(manifest);
-      expect(unknown, <String>['future.slot']);
-      // 认识的照常注册 —— 旧宿主 + 新插件不该整体失效
+      final bad = rig.slots.registerPlugin(manifest);
+
+      // **格式对但界面还没声明的插槽照样注册。**
+      //
+      // 这条以前是"未知插槽直接丢弃"，改了因为：插槽不该是内核的白名单
+      // （那意味着加一个位置要改内核），而且"插件先加载还是界面先渲染"
+      // 不该决定谁有效。这里没声明 future.slot，但它注册上了。
+      expect(bad, isEmpty);
       expect(rig.slots.uiIn('chat.toolbar'), hasLength(1));
-      expect(rig.slots.uiIn('future.slot'), isEmpty);
+      expect(rig.slots.uiIn('future.slot'), hasLength(1),
+          reason: '注册表收下它，界面声明了就会渲染');
+
+      // 界面上没人声明这个位置 —— 注册 ≠ 声明
+      expect(rig.slots.isDeclared('future.slot'), isFalse,
+          reason: '注册只说明插件挂在那儿，位置存不存在由界面说了算');
+    });
+
+    test('格式非法的插槽被拒绝并记审计', () {
+      final rig = makeRig();
+      final manifest = parseManifest(<String, dynamic>{
+        'manifestVersion': 1,
+        'id': 'a.b',
+        'name': 'x',
+        'version': '1.0.0',
+        'runtime': <String, dynamic>{'main': 'index.js'},
+        'provides': <String, dynamic>{
+          'ui': <dynamic>[
+            // 含空格和大写开头 —— 不是合法路径
+            <String, dynamic>{'slot': 'Bad Slot!', 'id': 'bad', 'type': 'button', 'label': 'B'},
+            <String, dynamic>{'slot': 'chat.toolbar', 'id': 't', 'type': 'button', 'label': 'T'},
+          ],
+        },
+      }).manifest!;
+
+      final bad = rig.slots.registerPlugin(manifest);
+
+      expect(bad, <String>['Bad Slot!']);
+      // 合法的照常注册 —— 旧宿主 + 新插件不该整体失效
+      expect(rig.slots.uiIn('chat.toolbar'), hasLength(1));
+      expect(rig.slots.uiIn('Bad Slot!'), isEmpty);
       expect(
-        rig.audit.entries.any((e) => e.primitive == 'ui.unknownSlot'),
+        rig.audit.entries.any((e) => e.primitive == 'ui.badSlot'),
         isTrue,
         reason: '要能让插件作者查出来，所以必须记审计',
       );
@@ -426,16 +461,21 @@ void main() {
       expect(await rig.store.installedVersion('dev.tsukiro.demo'), '2.0.0');
     });
 
-    test('用了未知插槽时给出警告但不阻止安装', () async {
+    test('用了格式非法的插槽时给出警告但不阻止安装', () async {
       final rig = makeRig();
       final result = await rig.installer.install(pluginZip(
         ui: <Map<String, dynamic>>[
-          <String, dynamic>{'slot': 'future.thing', 'id': 'f', 'type': 'button', 'label': 'F'},
+          // 含空格 —— 不是合法路径。
+          //
+          // 注意：格式**对**但界面还没声明的插槽现在不再告警。
+          // 插槽不是白名单 —— 加一个位置不该需要改内核，
+          // 而"插件先加载还是界面先渲染"也不该决定谁有效。
+          <String, dynamic>{'slot': 'future thing', 'id': 'f', 'type': 'button', 'label': 'F'},
         ],
       ));
 
       expect(result.ok, isTrue);
-      expect(result.warnings.join(' '), contains('future.thing'));
+      expect(result.warnings.join(' '), contains('future thing'));
     });
 
     test('卸载把磁盘/权限/工具/插槽四处都清掉', () async {

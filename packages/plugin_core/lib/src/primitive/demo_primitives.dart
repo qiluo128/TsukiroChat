@@ -15,6 +15,7 @@ import '../common/errors.dart';
 import '../hook/hook_bus.dart';
 import '../sandbox/path_guard.dart';
 import '../data/data_query.dart';
+import '../registry/slot_registry.dart';
 import '../ui/ui_node.dart';
 import 'host_services.dart';
 import 'primitive_registry.dart';
@@ -26,6 +27,8 @@ const Map<String, PrimitiveHandler> demoPrimitiveHandlers = <String, PrimitiveHa
   'chat.lastMessage': handleChatLastMessage,
   'chat.info': handleChatInfo,
   // ─────────────── 数据访问（docs/20 §4） ───────────────
+  'slot.list': handleSlotList,
+
   'state.get': handleStateGet,
   'state.set': handleStateSet,
   'state.delete': handleStateDelete,
@@ -377,6 +380,24 @@ UiNode _requireRoot(PrimitiveCall call) {
 }
 
 /// 插件状态：读。
+/// `slot.list` —— 插件在运行期问「有哪些插入点能用」。
+///
+/// 和 `data.entities` 是同一个思路：**让宿主的能力可被发现**。
+/// 插件不必翻文档猜插槽名，也不会因为宿主加了个位置而不知道。
+///
+/// 「能发现」和「能使用」一样重要 —— 这是自由度里容易被忽略的一半。
+Future<Object?> handleSlotList(PrimitiveCall call) async {
+  final slots = call.require<SlotRegistry>();
+  final tree = slots.tree();
+  return <String, dynamic>{
+    'tree': tree,
+    'count': slots.points.length,
+    'occupied': <String, int>{
+      for (final s in slots.occupiedSlots) s: slots.uiIn(s).length,
+    },
+  };
+}
+
 Future<Object?> handleStateGet(PrimitiveCall call) async {
   final state = call.require<HostPluginState>();
   final key = _requireStateKey(call);
