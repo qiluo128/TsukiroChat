@@ -375,15 +375,44 @@ class UiNode {
     if (raw == null) return null;
     final url = raw.toString().trim();
     if (url.isEmpty) return null;
-    if (url.length > 2048) {
-      throw TsukiroException(TsukiroErrorCode.invalidArgs, '图片地址过长');
-    }
     final lower = url.toLowerCase();
+
+    // ── 内联图片：允许，但有上界 ──
+    //
+    // 这条以前是被拒的，理由是"一个 base64 就能塞满内存"。
+    // 但那个理由站不住：
+    //
+    //   1. 内容是**插件自己的**，不涉及宿主数据 —— 不在"敏感信息"范围内
+    //   2. CSP 本来就写着 `img-src data:`，拒绝它等于两处自相矛盾
+    //   3. 内存上界已经由 maxNodes + Bridge 的 1MB 载荷上限兜住了
+    //
+    // 所以放开，但单独给它一个小得多的上界（256KB）：
+    // 图片是内联的，不是文件上传通道。
+    const maxDataUrlLength = 256 * 1024;
+    if (lower.startsWith('data:')) {
+      if (url.length > maxDataUrlLength) {
+        throw TsukiroException(
+          TsukiroErrorCode.invalidArgs,
+          '内联图片上限 ${maxDataUrlLength ~/ 1024}KB，'
+          '这次是 ${url.length ~/ 1024}KB。请改用 http 链接。',
+        );
+      }
+      return url;
+    }
+
     if (!lower.startsWith('https://') && !lower.startsWith('http://')) {
+      // **`file:` 必须继续拒绝。**
+      //
+      // 这条不是"过严"，是敏感信息防护：`file:` 是插件读宿主私有目录的
+      // 现成入口（数据库、缓存、其它插件的沙箱）。
       throw TsukiroException(
         TsukiroErrorCode.invalidArgs,
-        '图片地址只支持 http/https，收到「${url.length > 40 ? '${url.substring(0, 40)}…' : url}」',
+        '图片地址只支持 http/https/data:，收到「'
+        '${url.length > 40 ? '${url.substring(0, 40)}…' : url}」',
       );
+    }
+    if (url.length > 2048) {
+      throw TsukiroException(TsukiroErrorCode.invalidArgs, '图片地址过长');
     }
     return url;
   }

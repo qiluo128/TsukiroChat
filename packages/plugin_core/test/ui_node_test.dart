@@ -194,10 +194,17 @@ void main() {
       );
     });
 
-    test('**data: 被拒绝** —— 一个 base64 就能塞满内存', () {
+    test('data: 内联图片**允许**（内容属于插件自己，不在敏感信息范围内）', () {
+      final n = UiNode.parse(node('image', <String, dynamic>{
+        'image': 'data:image/png;base64,AAAA',
+      }));
+      expect(n.image, startsWith('data:'));
+    });
+
+    test('但内联图片有单独的 256KB 上界', () {
       expect(
         () => UiNode.parse(node('image', <String, dynamic>{
-          'image': 'data:image/png;base64,AAAA',
+          'image': 'data:image/png;base64,${'A' * (300 * 1024)}',
         })),
         throwsA(isA<TsukiroException>()),
       );
