@@ -3,6 +3,7 @@
 /// 这是"插件"从磁盘上的一堆文件变成**能用的能力**的地方。
 library;
 
+import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
@@ -92,6 +93,100 @@ class PluginHost extends ChangeNotifier {
 
   /// 能力市场：别的插件提供的能力登记在这，供调用方查找。
   final CapabilityRegistry capabilityRegistry;
+
+  /// 插件配置的**内存缓存**。
+  ///
+  /// 为什么需要缓存：visibleUi 是**同步**的（界面每帧都在调它），
+  /// 而配置存在 settings 表里是异步的。所以扫描时读一次进缓存，
+  /// 之后读缓存、变更时更新缓存。
+  ///
+  /// 没缓存的话，声明里的 when: config.petals.enabled 就没法求值 ——
+  /// 那是个同步判断。
+  final Map<String, Map<String, Object?>> _configCache =
+      <String, Map<String, Object?>>{};
+
+  /// 宿主是否已销毁。
+  ///
+  /// 异步任务（配置加载）靠它决定还要不要再改状态 ——
+  /// 在已销毁的宿主上 notifyListeners 会抛，而那时异常没人接。
+  bool _disposed = false;
+
+  /// 同步读一个插件的配置值（来自缓存）。
+  Object? configValue(String pluginId, String key) => _configCache[pluginId]?[key];
+
+  /// 某个插件当前的完整配置。
+  Map<String, Object?> configOf(String pluginId) =>
+      Map<String, Object?>.unmodifiable(_configCache[pluginId] ?? const <String, Object?>{});
+
+  /// 把声明的默认值与已存的值合并进缓存。
+  ///
+  /// **默认值必须进缓存**：用户没改过任何东西时，when 也得能求值 ——
+  /// 否则「默认开启」的开关会表现为关闭。
+  Future<void> refreshConfig(String pluginId) async {
+    final plugin = _find(pluginId);
+    final store = settings;
+    if (plugin == null || store == null) return;
+
+    // **整个过程包在 try 里。**
+    //
+    // 这是扫描之后 fire-and-forget 起的异步任务，所以：
+    //   - 宿主可能在它跑完之前就销毁（测试里就是这样，库都关了）
+    //   - settings 可能读失败
+    //
+    // 配置读不出来最多是「用默认值」，绝不该升级成一个未捕获的异常 ——
+    // 那会污染日志，而且在测试里表现为随机失败。
+    try {
+      final values = <String, Object?>{};
+      for (final field in plugin.manifest.provides.config) {
+        final raw = await store.get('plugin.config.$pluginId.${field.key}');
+        if (raw == null || raw.isEmpty) {
+          values[field.key] = field.defaultValue;
+          continue;
+        }
+        try {
+          values[field.key] = jsonDecode(raw);
+        } catch (_) {
+          // 存坏了就用默认值 —— 一个坏掉的配置值不该让整个插件失效
+          values[field.key] = field.defaultValue;
+        }
+      }
+      // 期间宿主可能已经被销毁了，别再改状态
+      if (_disposed) return;
+      _configCache[pluginId] = values;
+      notifyListeners();
+    } catch (_) {
+      // 读不到就保持现状：声明里的默认值仍会被 setConfig 补齐
+    }
+  }
+
+  /// 改一个配置项。
+  ///
+  /// 三件事都要做，少一件都会出问题：
+  ///   1. 落库（否则重启就没了）
+  ///   2. 更新缓存 + 通知界面（否则开关要等下次扫描才生效）
+  ///   3. **告诉插件**（否则插件不知道用户改了什么）
+  Future<void> setConfig(String pluginId, String key, Object? value) async {
+    final plugin = _find(pluginId);
+    if (plugin == null) return;
+
+    final store = settings;
+    if (store != null) {
+      await store.set('plugin.config.$pluginId.$key', jsonEncode(value));
+    }
+    final values = _configCache.putIfAbsent(pluginId, () => <String, Object?>{});
+    // 默认值可能还没进缓存（refreshConfig 还没跑完），先补齐
+    for (final field in plugin.manifest.provides.config) {
+      values.putIfAbsent(field.key, () => field.defaultValue);
+    }
+    values[key] = value;
+    notifyListeners();
+
+    dispatchUiEvent(pluginId, 'config.changed', payload: <String, dynamic>{
+      'key': key,
+      'value': value,
+      'all': Map<String, Object?>.from(values),
+    });
+  }
 
   HostAgentState? get agentState => primitiveRegistry.services.get<HostAgentState>();
 
@@ -223,6 +318,10 @@ class PluginHost extends ChangeNotifier {
 
     final unknownSlots = slotRegistry.registerPlugin(plugin.manifest);
     surfaceRegistry.registerPlugin(plugin.manifest);
+
+    // 配置是异步读的，但 visibleUi 是同步的 —— 所以读完进缓存。
+    // 不 await：扫描不该被 settings 的 IO 拖住，读完后 notifyListeners 会重画。
+    unawaited(refreshConfig(plugin.id));
     if (unknownSlots.isNotEmpty) {
       debugPrint('[plugin] ${plugin.id} 用了未知插槽：${unknownSlots.join(', ')}'
           '（已忽略，不影响其他功能）');
@@ -282,7 +381,7 @@ class PluginHost extends ChangeNotifier {
         }
       }
 
-      return _matchesWhen(ui.declaration.when, context);
+      return _matchesWhen(ui.declaration.when, context, ui.pluginId);
     }).toList(growable: false);
   }
 
@@ -290,9 +389,23 @@ class PluginHost extends ChangeNotifier {
   ///
   /// 没有表达式语言是**刻意的** —— 有表达式就要有解析器和沙箱，
   /// 而声明式 UI 的价值就在于宿主能完全掌控它渲染什么。
-  static bool _matchesWhen(Map<String, dynamic>? when, Map<String, dynamic> context) {
+  bool _matchesWhen(
+    Map<String, dynamic>? when,
+    Map<String, dynamic> context,
+    String pluginId,
+  ) {
     if (when == null || when.isEmpty) return true;
     for (final entry in when.entries) {
+      // `config.<键>` 读的是**插件自己的配置**。
+      //
+      // 有了它，一个纯声明式的插件（比如樱花主题）不用写一行 JS
+      // 就能做到「用户开了开关才画花瓣」—— 否则每个带开关的插件
+      // 都要写一遍「监听 config.changed 然后重绘」。
+      if (entry.key.startsWith('config.')) {
+        final value = configValue(pluginId, entry.key.substring('config.'.length));
+        if (value != entry.value) return false;
+        continue;
+      }
       if (context[entry.key] != entry.value) return false;
     }
     return true;
@@ -713,6 +826,7 @@ class PluginHost extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     for (final plugin in _plugins) {
       unawaited(plugin.runtime?.stop());
     }

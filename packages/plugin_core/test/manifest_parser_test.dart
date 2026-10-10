@@ -127,7 +127,16 @@ void main() {
           <String, dynamic>{'name': 't', 'description': 'x', 'handler': 'h.js'},
         ],
         'ui': <dynamic>[
-          <String, dynamic>{'slot': 'chat.toolbar', 'id': 't', 'type': 'button', 'label': 'T'},
+          // **带 onClick** —— 有回调就得有人接，这才需要 runtime。
+          // 只是画出来的东西（图形、粒子、模糊）不需要，
+          // 见下一条测试。
+          <String, dynamic>{
+            'slot': 'chat.toolbar',
+            'id': 't',
+            'type': 'button',
+            'label': 'T',
+            'onClick': <String, dynamic>{'event': 'x'},
+          },
         ],
         'pages': <dynamic>[
           <String, dynamic>{'id': 'p', 'title': 'P', 'entry': 'a.html'},
@@ -147,6 +156,26 @@ void main() {
       final r = parseManifest(json);
       expect(r.isValid, isFalse);
       expect(r.issues.map((e) => e.path), contains('runtime.main'));
+    });
+
+    test('**纯画面元素的 ui 不需要 runtime**', () {
+      // 零代码插件（美化包）加一层飘落花瓣：它只是被画出来，
+      // 没有回调，所以不需要谁来接。
+      // 老规则「声明了 ui 就必须有 runtime」会把它挡在门外，
+      // 而作者被迫提供一个里面一行有用代码都没有的 runtime。
+      final json = base()..remove('runtime');
+      json['provides'] = <String, dynamic>{
+        'ui': <dynamic>[
+          <String, dynamic>{
+            'slot': 'home.background',
+            'id': 'petals',
+            'type': 'particle',
+            'config': <String, dynamic>{'particle': 'petal'},
+          },
+        ],
+      };
+      final r = parseManifest(json);
+      expect(r.isValid, isTrue, reason: r.issues.map((e) => e.message).join('; '));
     });
 
     test('非对象顶层被拒', () {

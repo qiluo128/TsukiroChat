@@ -8,6 +8,7 @@
 library;
 
 import '../capability/capability.dart';
+import 'config_field.dart';
 import '../common/semver.dart';
 import '../permission/permission.dart';
 import 'surface.dart';
@@ -250,6 +251,11 @@ class ProvidesSpec {
     /// 做向量库的插件提供检索，做记忆的插件调用它。
     this.capabilities = const <CapabilityDeclaration>[],
 
+    /// 插件声明的配置项。宿主据此画设置界面。
+    ///
+    /// **空列表 = 这个插件没有可配置的东西**，界面不显示配置入口。
+    this.config = const <ConfigField>[],
+
     this.rawReserved = const <String, dynamic>{},
   });
 
@@ -263,6 +269,12 @@ class ProvidesSpec {
 
   /// 提供给别的插件的能力。
   final List<CapabilityDeclaration> capabilities;
+
+  /// 插件声明的配置项。
+  final List<ConfigField> config;
+
+  /// 有没有可配置的东西。界面据此决定要不要显示配置区块。
+  bool get hasConfig => config.isNotEmpty;
 
   /// 尚未建模但需原样保留的段：`overlays` / `skills` / `personas` /
   /// `mcp` / `memory` / `layout` / `replaces`。

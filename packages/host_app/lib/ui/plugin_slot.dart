@@ -19,6 +19,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../providers/plugin_providers.dart';
 import '../theme/app_theme.dart';
+import 'plugin_native_view.dart';
 
 /// 一个插槽位。
 ///
@@ -127,6 +128,30 @@ class _DeclarationWidgetState extends State<_DeclarationWidget> {
     final pluginId = widget.registered.pluginId;
 
     switch (decl.type) {
+      // ── 视觉节点 ──
+      //
+      // 这些和声明式控件不一样：它们不是"按钮/开关"那类语义控件，
+      // 而是**画面元素**（粒子、模糊、变换）。
+      //
+      // 复用运行期 UI 树的渲染器 —— 一套渲染代码，两个来源
+      // （清单声明 / 运行期 update），不然两边会长歪。
+      case 'particle':
+      case 'blur':
+      case 'stack':
+      case 'transform':
+      case 'shape':
+        return PluginNativeView(
+          // 把插件的配置读进来：声明里的 config.<键> 靠它求值。
+          // 少了它，配置项就只是存进库、界面回显，而画面不变。
+          root: uiNodeFromDeclaration(
+            decl,
+            configOf: (key) => widget.host?.configValue(pluginId, key),
+          ),
+          pluginId: widget.registered.pluginId,
+          onEvent: (nodeId, event, payload) =>
+              _dispatch(pluginId, decl, <String, dynamic>{'nodeId': nodeId}),
+        );
+
       case 'divider':
         return t.isDark
             ? Container(width: 1, height: 20, color: t.divider)

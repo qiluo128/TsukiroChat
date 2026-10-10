@@ -11,6 +11,7 @@ import '../../plugin/plugin_host.dart';
 import '../../plugin/plugin_runtime.dart';
 import '../../providers/plugin_providers.dart';
 import '../../theme/app_theme.dart';
+import 'plugin_config_section.dart';
 
 class PluginPage extends ConsumerWidget {
   const PluginPage({super.key});
@@ -396,6 +397,16 @@ class _PluginCardState extends State<_PluginCard> {
               const SizedBox(width: 4),
             ],
           ),
+
+          // 插件声明的配置项。
+          //
+          // **放在日志面板之前** —— 设置是用户主动想找的东西，
+          // 日志是出问题时才看的。顺序反了的话每次调设置都要先
+          // 划过一屏日志。
+          //
+          // 没声明配置的插件这里什么都不显示（组件内部判了）。
+          if (widget.host != null)
+            PluginConfigSection(plugin: plugin, host: widget.host!),
 
           if (_expanded)
             _LogPanel(plugin: plugin),

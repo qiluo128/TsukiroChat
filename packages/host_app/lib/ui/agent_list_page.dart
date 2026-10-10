@@ -55,18 +55,33 @@ class AgentListPage extends ConsumerWidget {
             ],
           ),
         ),
-        data: (list) => Column(
+        data: (list) => Stack(
           children: <Widget>[
-            // 插件插槽：首页卡片区。
+            // 插件插槽：首页**背景层**。
             //
-            // 之前 home.cards 和 agent.sections **完全没放进任何界面** ——
-            // 插件声明了也永远看不到。用户以为插件坏了，其实是宿主没给位置。
-            PluginSlot(
-              slot: 'home.cards',
-              axis: Axis.vertical,
-              context: <String, dynamic>{'agentCount': list.length},
+            // 单独一个插槽，而不是让插件往 home.cards 里塞东西 ——
+            // 背景要铺满、不吃点击、画在所有内容后面，
+            // 这和"一张卡片"是完全不同的位置语义。
+            //
+            // 樱花主题的飘落花瓣就画在这里（整片都是纯 Flutter 绘制，
+            // 不是 WebView，也不吃滚动）。
+            const Positioned.fill(
+              child: IgnorePointer(
+                child: PluginSlot(slot: 'home.background'),
+              ),
             ),
-            Expanded(
+            Column(
+              children: <Widget>[
+                // 插件插槽：首页卡片区。
+                //
+                // 之前 home.cards 和 agent.sections **完全没放进任何界面** ——
+                // 插件声明了也永远看不到。用户以为插件坏了，其实是宿主没给位置。
+                PluginSlot(
+                  slot: 'home.cards',
+                  axis: Axis.vertical,
+                  context: <String, dynamic>{'agentCount': list.length},
+                ),
+                Expanded(
               child: list.isEmpty
                   ? const _EmptyGuide()
                   : RefreshIndicator(
@@ -87,6 +102,8 @@ class AgentListPage extends ConsumerWidget {
                         ),
                       ),
                     ),
+                ),
+              ],
             ),
           ],
         ),

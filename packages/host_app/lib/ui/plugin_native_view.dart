@@ -21,8 +21,62 @@ import 'package:flutter/material.dart';
 import 'package:plugin_core/plugin_core.dart';
 
 import '../theme/app_theme.dart';
+import 'dart:ui' as ui;
+
+import 'plugin_particle.dart';
 import 'plugin_shape.dart';
 import 'plugin_slot.dart' show pluginIcon;
+
+/// 把**清单声明**映射成 UI 节点。
+///
+/// 两个来源（清单里的 `provides.ui`、运行期 `ui.window` 送的树）
+/// 共用一套渲染代码 —— 否则"插槽里能画的"和"窗口里能画的"
+/// 会慢慢长成两套不同的东西。
+///
+/// 视觉参数放在声明的 `config` 里（`UiDeclaration` 没有
+/// particle/radius 这些字段，而为一个画面元素加一批字段不值得）。
+UiNode uiNodeFromDeclaration(UiDeclaration decl, {Object? Function(String key)? configOf}) {
+  final cfg = decl.config ?? const <String, dynamic>{};
+
+  // 声明里的某个值可以直接引用插件配置，写成字符串 config.<键>。
+  //
+  // **不做这个的话，配置项就是「声明了但没生效」** —— 用户拖了滑块、
+  // 存进了库、界面也回显了，但画面纹丝不动。那比没有这个配置项更糟：
+  // 用户会以为是自己没操作对。
+  Object? resolve(Object? raw) {
+    if (raw is! String || !raw.startsWith('config.')) return raw;
+    return configOf?.call(raw.substring('config.'.length));
+  }
+  return UiNode(
+    type: UiNodeType.parse(decl.type),
+    id: decl.id,
+    text: decl.label,
+    icon: decl.icon,
+    // 声明里能带子节点，把它们也转过来 —— 否则 stack / transform
+    // 这类容器在插槽里就只能画个空壳
+    children: decl.children.map(uiNodeFromDeclaration).toList(growable: false),
+    shape: UiShape.parse(decl.type == 'shape' ? cfg['shape']?.toString() : null),
+    shapeColor: _hexOrNull(cfg['color']),
+    particleShape: ParticleShape.parse(cfg['particle']?.toString()),
+    count: (resolve(cfg['count']) as num?)?.toInt(),
+    speed: (resolve(cfg['speed']) as num?)?.toDouble(),
+    blurRadius: (cfg['radius'] as num?)?.toDouble(),
+    rotation: (cfg['rotation'] as num?)?.toDouble(),
+    scale: (cfg['scale'] as num?)?.toDouble(),
+    offsetX: (cfg['offsetX'] as num?)?.toDouble(),
+    offsetY: (cfg['offsetY'] as num?)?.toDouble(),
+    opacity: (resolve(cfg['opacity']) as num?)?.toDouble(),
+  );
+}
+
+/// `#RRGGBB` → int。解不开返回 null（渲染时退回主题色）。
+int? _hexOrNull(Object? raw) {
+  if (raw == null) return null;
+  var text = raw.toString().trim();
+  if (text.startsWith('#')) text = text.substring(1);
+  if (text.length != 6) return null;
+  return int.tryParse(text, radix: 16);
+}
 
 /// 渲染一棵插件 UI 树。
 class PluginNativeView extends StatelessWidget {
@@ -96,6 +150,15 @@ class PluginNativeView extends StatelessWidget {
 
       case UiNodeType.shape:
         return _shape(context, node);
+
+      case UiNodeType.stack:
+        return _stack(context, node);
+      case UiNodeType.blur:
+        return _blur(context, node);
+      case UiNodeType.transform:
+        return _transform(context, node);
+      case UiNodeType.particle:
+        return _particle(context, node);
 
       case UiNodeType.unknown:
         // **不静默跳过**：插件用新版宿主的控件时，
@@ -227,6 +290,86 @@ class PluginNativeView extends StatelessWidget {
       child: CustomPaint(
         painter: PluginShapePainter(shape: node.shape ?? UiShape.circle, color: color),
       ),
+    );
+  }
+
+  /// 叠放。后面的盖在前面上。
+  ///
+  /// 用 Stack 而不是 Column：毛玻璃卡片需要「底图 + 模糊层 + 文字」
+  /// 三者**层叠**，纵向排列表达不了这个。
+  Widget _stack(BuildContext context, UiNode node) {
+    final children = node.children.map((c) => _build(context, c)).toList(growable: false);
+    return Stack(
+      alignment: _stackAlign(node.align),
+      children: <Widget>[
+        for (final w in children) w,
+      ],
+    );
+  }
+
+  Alignment _stackAlign(UiAlign a) {
+    switch (a) {
+      case UiAlign.center:
+        return Alignment.center;
+      case UiAlign.end:
+        return Alignment.bottomRight;
+      case UiAlign.spaceBetween:
+      case UiAlign.start:
+        return Alignment.topLeft;
+    }
+  }
+
+  /// 毛玻璃。
+  ///
+  /// 它模糊的是**背后已经画好的内容**，不是自己的子节点 ——
+  /// 这是 BackdropFilter 的语义，也是毛玻璃的定义。
+  /// 所以通常作为 stack 的一层用。
+  Widget _blur(BuildContext context, UiNode node) {
+    final r = node.blurRadius ?? 12;
+    return BackdropFilter(
+      filter: ui.ImageFilter.blur(sigmaX: r, sigmaY: r),
+      child: node.children.isEmpty
+          ? const SizedBox.expand()
+          : _build(context, node.children.first),
+    );
+  }
+
+  /// 变换。
+  ///
+  /// 位移用**比例**而不是像素：插件不知道渲染出来多宽，
+  /// 给像素值的话同一棵树在不同屏幕上会跑到框外。
+  Widget _transform(BuildContext context, UiNode node) {
+    final child = node.children.isEmpty
+        ? const SizedBox.shrink()
+        : _build(context, node.children.first);
+    if (node.rotation == null && node.scale == null && node.offsetX == null && node.offsetY == null) {
+      return child;
+    }
+    return LayoutBuilder(
+      builder: (context, box) {
+        final w = box.maxWidth.isFinite ? box.maxWidth : 0.0;
+        final h = box.maxHeight.isFinite ? box.maxHeight : 0.0;
+        return Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()
+            ..translateByDouble((node.offsetX ?? 0) * w, (node.offsetY ?? 0) * h, 0, 1)
+            ..rotateZ(node.rotation ?? 0)
+            ..scaleByDouble(node.scale ?? 1, node.scale ?? 1, 1, 1),
+          child: child,
+        );
+      },
+    );
+  }
+
+  Widget _particle(BuildContext context, UiNode node) {
+    final argb = node.shapeColor;
+    final color = argb == null ? context.tokens.primary : Color(0xFF000000 | argb);
+    return PluginParticleField(
+      shape: node.particleShape ?? ParticleShape.petal,
+      count: node.count ?? 14,
+      color: color,
+      speed: node.speed ?? 1,
+      opacity: node.opacity ?? 1,
     );
   }
 

@@ -10,9 +10,50 @@
   "minHostVersion": "0.1.0",
   "hostApi": "^1.0.0",
 
-  "permissions": [],
+  "permissions": [
+    {
+      "name": "ui",
+      "reason": "在首页背景层绘制飘落的樱花花瓣"
+    }
+  ],
 
   "provides": {
+    "config": [
+      {
+        "key": "petals.enabled",
+        "type": "toggle",
+        "label": "樱花飘落",
+        "description": "在首页飘落樱花花瓣。关掉可以让界面更安静。",
+        "default": true
+      },
+      {
+        "key": "petals.count",
+        "type": "number",
+        "label": "花瓣数量",
+        "description": "花瓣越多越热闹，也会稍微多耗一点电。",
+        "min": 6,
+        "max": 40,
+        "default": 14
+      }
+    ],
+
+    "ui": [
+      {
+        "slot": "home.background",
+        "id": "petals",
+        "type": "particle",
+        "order": 10,
+        "config": {
+          "particle": "petal",
+          "color": "#F7B6C8",
+          "speed": 1.0,
+          "opacity": 0.85,
+          "count": "config.petals.count"
+        },
+        "when": { "config.petals.enabled": true }
+      }
+    ],
+
     "theme": {
       "id": "sakura",
       "name": "樱花",

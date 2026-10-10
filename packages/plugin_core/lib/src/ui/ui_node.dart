@@ -47,6 +47,34 @@ enum UiNodeType {
   spacer,
   divider,
 
+  /// 叠放。后面的盖在前面上。
+  ///
+  /// **毛玻璃卡片必需** —— 一张卡要同时有「底图 + 模糊层 + 文字」，
+  /// 没有 stack 就只能靠嵌套容器硬凑，而且凑不出正确的层序。
+  stack,
+
+  // ── 视觉 ──
+
+  /// 毛玻璃：把**后面已经画好的内容**模糊掉。
+  ///
+  /// 注意它模糊的是「背后的东西」，不是自己的子节点 ——
+  /// 这是 BackdropFilter 的语义，也是毛玻璃的定义。
+  /// 所以它通常作为 [stack] 的一层用。
+  blur,
+
+  /// 变换：旋转 / 缩放 / 位移。
+  ///
+  /// 物理瓶那种「跟着重力歪」的效果靠它，
+  /// 不需要物理引擎，也不需要每帧回传状态。
+  transform,
+
+  /// 粒子：飘落的花瓣 / 雪 / 星光 / 火星。
+  ///
+  /// 做成一个**节点**而不是让插件自己画，是因为它需要帧循环 ——
+  /// 而帧循环必须留在宿主里（插件每帧回传状态是不可能的，
+  /// 见 docs/23 的分工）。
+  particle,
+
   // ── 内容 ──
   text,
   image,
@@ -103,6 +131,25 @@ enum UiShape {
 
   static UiShape? parse(String? raw) {
     for (final s in UiShape.values) {
+      if (s.name == raw) return s;
+    }
+    return null;
+  }
+}
+
+/// 粒子形状。
+///
+/// **封闭集合**，理由和 [UiShape] 一样：新增一种 = 宿主加一段绘制代码。
+enum ParticleShape {
+  /// 花瓣（樱花、桃花）。带一点自转和下坠的摆动。
+  petal,
+  snow,
+  star,
+  dot,
+  leaf;
+
+  static ParticleShape? parse(String? raw) {
+    for (final s in ParticleShape.values) {
       if (s.name == raw) return s;
     }
     return null;
@@ -180,6 +227,15 @@ class UiNode {
     this.shape,
     this.shapeColor,
     this.children = const <UiNode>[],
+    this.blurRadius,
+    this.rotation,
+    this.scale,
+    this.offsetX,
+    this.offsetY,
+    this.particleShape,
+    this.count,
+    this.speed,
+    this.opacity,
   });
 
   final UiNodeType type;
@@ -237,6 +293,36 @@ class UiNode {
   /// 仍然只能走 emphasis。这样既给了图案自由，又没打开
   /// 「插件自带一套 CSS」的口子。
   final int? shapeColor;
+
+  // ─────────────── 视觉节点 ───────────────
+
+  /// 模糊半径（仅 [UiNodeType.blur]）。0 表示不模糊。
+  final double? blurRadius;
+
+  /// 旋转弧度（仅 [UiNodeType.transform]）。
+  final double? rotation;
+
+  /// 缩放（仅 [UiNodeType.transform]）。
+  final double? scale;
+
+  /// 位移，**按父容器尺寸的比例**（-1..1）而不是像素。
+  ///
+  /// 用比例是因为插件不知道渲染出来多宽 —— 给像素值的话
+  /// 同一棵树在不同屏幕上会跑到框外。
+  final double? offsetX;
+  final double? offsetY;
+
+  /// 粒子形状（仅 [UiNodeType.particle]）。
+  final ParticleShape? particleShape;
+
+  /// 粒子数量。
+  final int? count;
+
+  /// 下落速度倍率。
+  final double? speed;
+
+  /// 整体不透明度（0..1）。
+  final double? opacity;
 
   final List<UiNode> children;
 
@@ -357,6 +443,15 @@ class UiNode {
       onTap: _shortString(raw['onTap'], 128),
       shape: UiShape.parse(raw['shape']?.toString()),
       shapeColor: _parseColor(raw['color']),
+      blurRadius: (raw['radius'] as num?)?.toDouble().clamp(0.0, 60.0),
+      rotation: (raw['rotation'] as num?)?.toDouble(),
+      scale: (raw['scale'] as num?)?.toDouble().clamp(0.05, 12.0),
+      offsetX: (raw['offsetX'] as num?)?.toDouble().clamp(-4.0, 4.0),
+      offsetY: (raw['offsetY'] as num?)?.toDouble().clamp(-4.0, 4.0),
+      particleShape: ParticleShape.parse(raw['particle']?.toString() ?? raw['shape']?.toString()),
+      count: (raw['count'] as num?)?.toInt().clamp(1, 120),
+      speed: (raw['speed'] as num?)?.toDouble().clamp(0.1, 6.0),
+      opacity: (raw['opacity'] as num?)?.toDouble().clamp(0.0, 1.0),
       children: children,
     );
   }

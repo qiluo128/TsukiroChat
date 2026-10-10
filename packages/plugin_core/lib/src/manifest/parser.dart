@@ -9,6 +9,7 @@
 ///     为 true 时才可用。
 library;
 
+import 'config_field.dart';
 import '../capability/capability.dart';
 import 'dart:convert';
 
@@ -65,6 +66,20 @@ const Set<String> allowedUiTypes = <String>{
   'select',
   'number',
   'slider',
+
+  // ── 视觉节点（docs/23） ──
+  //
+  // 这些不是「控件」而是**画面元素**：粒子、模糊、变换、图形。
+  // 它们由运行期 UI 树的渲染器负责，和上面的语义控件共用一套代码
+  // （见 uiNodeFromDeclaration）。
+  //
+  // **加进白名单是必须的**：不在里面的话整个清单**校验失败**、
+  // 插件装不上 —— 而不是「这个控件画不出来」。差别很大。
+  'particle',
+  'blur',
+  'stack',
+  'transform',
+  'shape',
 };
 
 /// 允许的页面呈现方式。
@@ -212,9 +227,21 @@ ManifestParseResult parseManifest(Map<String, dynamic> json) {
   // 那不是"配置"，是"漏了东西" —— 必须在安装时拦下，而不是等运行期发现
   // 按钮点了没反应。
   if (runtime == null) {
+    // ── 什么样的 ui 才真的需要 runtime ──
+    //
+    // 原来的规则是「声明了 ui 就必须有 runtime」，理由是
+    // 「控件的 onClick 要有人接」。那个理由对**控件**成立，
+    // 但对**画面元素**不成立：
+    //
+    //   飘落的花瓣 / 一个图形 / 一层模糊 —— 它们只是被画出来，
+    //   没有回调、不需要谁来接。樱花主题本来就是零代码插件，
+    //   加了花瓣之后却被要求提供一个 runtime，
+    //   而那个 runtime 里一行有用的代码都不会有。
+    //
+    // 所以判据从「有没有声明 ui」收紧到「有没有**需要代码**的部分」。
     final codeProvides = <String>[
       if (provides.tools.isNotEmpty) 'tools',
-      if (provides.ui.isNotEmpty) 'ui',
+      if (provides.ui.any(_uiDeclNeedsCode)) 'ui',
       if (provides.pages.isNotEmpty) 'pages',
       if (provides.layout != null) 'layout',
       if (provides.replaces != null) 'replaces',
@@ -495,6 +522,8 @@ ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
   final surfaces = _parseSurfaces(raw['surfaces'], errors);
   final capabilities = _parseCapabilities(raw['capabilities'], errors);
   final themes = _parseThemes(raw['theme'] ?? raw['themes'], errors);
+  // 插件声明的配置项。宿主据此画设置界面（没声明就不显示配置入口）。
+  final configFields = _parseConfigFields(raw['config'], errors);
   final reserved = <String, dynamic>{};
 
   // 预留段：**只解析不执行**。字段一次留全，这样插件今天写的 manifest
@@ -527,9 +556,43 @@ ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
     pages: pages,
     surfaces: surfaces,
     capabilities: capabilities,
+    config: configFields,
     themes: themes,
     rawReserved: reserved,
   );
+}
+
+/// 解析 provides.config（插件的配置项）。
+///
+/// 坏条目只丢自己：一个插件声明了三个开关、其中一个写错了，
+/// 不该让另外两个也画不出来。
+List<ConfigField> _parseConfigFields(Object? raw, List<ManifestIssue> errors) {
+  if (raw == null) return const <ConfigField>[];
+  if (raw is! List) {
+    errors.add(const ManifestIssue('provides.config', '必须是数组'));
+    return const <ConfigField>[];
+  }
+
+  final out = <ConfigField>[];
+  final seen = <String>{};
+  for (var i = 0; i < raw.length; i++) {
+    final parsed = ConfigField.parse(raw[i]);
+    if (parsed == null) {
+      // 这里**只丢自己不整单失败**（和 capabilities 不同）：
+      // 配置项是纯界面描述，少画一个开关不会让插件功能坏掉，
+      // 而整单失败会让插件装不上 —— 代价不对等。
+      continue;
+    }
+    if (!seen.add(parsed.key)) {
+      errors.add(ManifestIssue(
+        'provides.config[$i].key',
+        '配置键「${parsed.key}」重复',
+      ));
+      continue;
+    }
+    out.add(parsed);
+  }
+  return out;
 }
 
 /// 解析 provides.capabilities（能力市场）。
@@ -950,9 +1013,22 @@ List<UiDeclaration> _parseUi(Object? raw, List<ManifestIssue> errors) {
       continue;
     }
 
-    // divider 不需要 label，其余需要
+    // divider 不需要 label，其余需要。
+    //
+    // **视觉节点也豁免**（particle / blur / stack / transform / shape）：
+    // 它们不是「能点、能读的控件」，而是画面元素 ——「飘落的花瓣」
+    // 没有标签可写。硬要一个的话作者只会填个占位字符串，
+    // 而那个字符串永远不会被显示出来。
+    const labelOptional = <String>{
+      'divider',
+      'particle',
+      'blur',
+      'stack',
+      'transform',
+      'shape',
+    };
     final label = item['label']?.toString();
-    if (type != 'divider' && (label == null || label.isEmpty)) {
+    if (!labelOptional.contains(type) && (label == null || label.isEmpty)) {
       errors.add(ManifestIssue('$path.label', '控件类型 "$type" 必须有 label'));
       continue;
     }
@@ -1151,4 +1227,15 @@ List<PageDeclaration> _parsePages(Object? raw, List<ManifestIssue> errors) {
     ));
   }
   return result;
+}
+
+/// 这个 ui 声明需不需要代码实现。
+///
+/// 判据只有一个：**有没有 onClick**。有回调就得有人接，
+/// 那就必须有 runtime；只是"画出来"的话不需要。
+///
+/// 递归看子节点 —— 一个 section 自身没回调，但它的按钮可能有。
+bool _uiDeclNeedsCode(UiDeclaration decl) {
+  if ((decl.onClickEvent ?? '').isNotEmpty) return true;
+  return decl.children.any(_uiDeclNeedsCode);
 }

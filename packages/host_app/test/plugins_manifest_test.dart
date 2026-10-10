@@ -83,8 +83,14 @@ void main() {
           reason: '这些权限名不在目录里，调用时会被门禁拒：\n  ${unknown.join('\n  ')}');
     });
 
-    test('插槽名都是已知的', () {
-      final unknown = <String>[];
+    test('插槽名格式合法（**不是**必须在基线清单里）', () {
+      // 这条测试原来断言「插槽名必须在 knownSlots 里」，那是白名单时代的
+      // 语义。两轮前改成了「knownSlots 只是基线，格式对就收」——
+      // 因为插槽不该是内核的白名单：加一个挂载位置应该是"界面里多写一行"，
+      // 而不是"改内核 + 改这份清单"。
+      //
+      // 所以现在校验的是**格式**。knownSlots 仍然保留，供自省和文档用。
+      final malformed = <String>[];
 
       for (final dir in pluginDirs) {
         final file = File(p.join(dir.path, 'manifest.json'));
@@ -94,8 +100,8 @@ void main() {
 
         void checkUi(List<UiDeclaration> list) {
           for (final ui in list) {
-            if (!knownSlots.contains(ui.slot)) {
-              unknown.add('${p.basename(dir.path)}: ${ui.slot}');
+            if (!SlotRegistry.isWellFormedSlot(ui.slot)) {
+              malformed.add('${p.basename(dir.path)}: ${ui.slot}');
             }
             checkUi(ui.children);
           }
@@ -104,10 +110,10 @@ void main() {
         checkUi(parsed.manifest!.provides.ui);
       }
 
-      // 未知插槽运行时是**静默忽略**（这是刻意的），所以这里不判失败，
-      // 只是提醒 —— 但提醒要显眼，否则等于没提。
-      expect(unknown, isEmpty,
-          reason: '这些插槽名不在 knownSlots 里，界面上永远不会显示：\n  ${unknown.join('\n  ')}');
+      // 格式非法的插槽会被注册表**丢弃**（只有格式对但界面没声明的才会
+      // 先收下、等界面声明）。所以这里判失败。
+      expect(malformed, isEmpty,
+          reason: '这些插槽名格式不合法，注册表会直接丢掉：\n  ${malformed.join('\n  ')}');
     });
   });
 

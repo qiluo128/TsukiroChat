@@ -53,6 +53,8 @@ export 'src/ui/ui_node.dart';
 // 能力市场：插件提供能力、别的插件调用（docs/22）
 export 'src/capability/capability.dart';
 export 'src/manifest/surface.dart';
+// 插件配置项声明：宿主据此画设置界面（docs/24）
+export 'src/manifest/config_field.dart';
 export 'src/manifest/parser.dart';
 export 'src/manifest/theme.dart';
 export 'src/packaging/installer.dart';
