@@ -6,7 +6,7 @@
     "protocol": "openai",
     "baseUrl": "http://103.236.91.136:52165/v1",
     "apiKey": "<在这里填 sk-...>",
-    "defaultModel": "deepseek-v4.1-flash",
+    "defaultModel": "DeepSeek-V4.1-Flash",
     "displayName": "测试中转站"
   },
 

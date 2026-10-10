@@ -9,6 +9,7 @@ import 'package:model_gateway/model_gateway.dart';
 
 import '../../data/models.dart';
 import '../../providers/app_providers.dart';
+import '../../services/provider_presets.dart';
 import '../../theme/app_theme.dart';
 import '../user_error.dart';
 
@@ -108,6 +109,23 @@ class _ProviderEditPageState extends ConsumerState<ProviderEditPage> {
             ),
           ),
           const SizedBox(height: 12),
+
+          // ── 常用服务商预设 ──
+          //
+          // 放在最前面：接入服务商最容易错的就是 baseUrl
+          //（少个 /v1、用了文档站地址），而表现都是"连不上"，
+          // 用户不知道错在哪。选一个预设就把协议 + 地址 + 模型名填好了。
+          ListTile(
+            leading: const Icon(Icons.auto_awesome_outlined),
+            title: const Text('常用服务商'),
+            subtitle: Text(
+              _matchedPreset()?.name ?? '选一个预设，自动填好地址和模型',
+              style: TextStyle(fontSize: 12.5, color: t.textMuted),
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: _pickPreset,
+          ),
+
           ListTile(
             leading: const Icon(Icons.cable_outlined),
             title: const Text('协议'),
@@ -378,6 +396,72 @@ class _ProviderEditPageState extends ConsumerState<ProviderEditPage> {
     ref.invalidate(providerListProvider);
     ref.invalidate(modelChoicesProvider);
     if (mounted) setState(() {});
+  }
+
+  /// 当前填的地址匹配到哪个预设。
+  ///
+  /// 只比主机名：用户可能在预设基础上改了版本段，那仍然是同一个服务商。
+  ProviderPreset? _matchedPreset() => presetForUrl(_baseUrl.text);
+
+  Future<void> _pickPreset() async {
+    final picked = await showModalBottomSheet<ProviderPreset>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: <Widget>[
+            const ListTile(
+              dense: true,
+              title: Text('常用服务商', style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text('选一个会自动填好协议、地址和模型名', style: TextStyle(fontSize: 12)),
+            ),
+            const Divider(height: 1),
+            for (final p in providerPresets)
+              ListTile(
+                title: Text(p.name),
+                subtitle: Text(
+                  [if (p.note != null) p.note!, p.baseUrl].join(' · '),
+                  style: const TextStyle(fontSize: 11.5),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: presetForUrl(_baseUrl.text)?.id == p.id
+                    ? const Icon(Icons.check, size: 18)
+                    : null,
+                onTap: () => Navigator.pop(ctx, p),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      _protocol = picked.protocol;
+      _baseUrl.text = picked.baseUrl;
+      // 名称只在用户还没自己填过时才覆盖 ——
+      // 把用户起的名字冲掉是很烦人的
+      if (_name.text.trim().isEmpty) _name.text = picked.name;
+    });
+
+    // 模型名跟着预想一起填 —— 预填到"手动添加模型"那一栏。
+    //
+    // **不直接写进模型表**：新建的供应商还没落库，模型记录没地方挂，
+    // 而且用户可能想改名字再存。预填让他确认一下，成本很低。
+    //
+    // 已经有模型记录时不覆盖：那种情况说明用户在改一个已配好的供应商，
+    // 他知道自己在做什么。
+    if (picked.defaultModel != null) {
+      setState(() => _manualModel.text = picked.defaultModel!);
+    }
+
+    if (picked.keyHint != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('到 ${picked.keyHint} 申请 API Key'),
+        duration: const Duration(seconds: 3),
+      ));
+    }
   }
 
   Future<void> _pickProtocol() async {

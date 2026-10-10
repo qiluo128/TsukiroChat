@@ -209,6 +209,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     try {
       switch (action) {
         case MessageAction.copy:
+        case MessageAction.selectText:
+          // 这两个在气泡里就处理完了（复制直接进剪贴板，
+          // 选择文本弹的是气泡自己的对话框），控制器不需要参与。
           return;
 
         case MessageAction.retract:

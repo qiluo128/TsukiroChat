@@ -15,7 +15,7 @@ import '../theme/app_theme.dart';
 import 'agent_avatar.dart';
 
 /// 消息上能做的操作。
-enum MessageAction { copy, retract, edit, regenerate }
+enum MessageAction { copy, selectText, retract, edit, regenerate }
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
@@ -86,6 +86,12 @@ class MessageBubble extends StatelessWidget {
               if (!isUser) const SizedBox(width: 8),
               Flexible(
                 child: GestureDetector(
+                  // **opaque**：让这一层在命中测试里吃掉事件。
+                  //
+                  // 默认的 deferToChild 只在子节点没处理时才响应，
+                  // 于是"长按到底算谁的"取决于子节点的实现细节 ——
+                  // 表现就是长按时灵时不灵。
+                  behavior: HitTestBehavior.opaque,
                   onLongPress: () => _showMenu(context, text),
                   child: Container(
                     constraints: BoxConstraints(
@@ -180,6 +186,25 @@ class MessageBubble extends StatelessWidget {
                 _copy(context, text);
               },
             ),
+
+            // 「选择文本」放进菜单，而不是让长按直接进选择模式。
+            //
+            // 长按既要开菜单又要选文本，两者会打架 —— 结果是
+            // "有时弹菜单、有时弹选择手柄"，用户觉得长按不灵。
+            // 所以让**菜单独占长按**，选择变成一个明确的选择。
+            //
+            // 这也是微信/Telegram 的做法，用户对它有肌肉记忆。
+            ListTile(
+              leading: const Icon(Icons.text_fields, size: 20),
+              title: const Text('选择文本'),
+              subtitle: const Text('可以挑一段复制，或全选',
+                  style: TextStyle(fontSize: 12)),
+              enabled: text.trim().isNotEmpty,
+              onTap: () {
+                Navigator.pop(ctx);
+                _showSelectable(context, text);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.undo_outlined, size: 20),
               title: const Text('撤回'),
@@ -217,6 +242,38 @@ class MessageBubble extends StatelessWidget {
             const SizedBox(height: 8),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 打开一个可选中的文本视图。
+  ///
+  /// 为什么不直接在气泡里用 `SelectableText`：那样长按会被它抢走，
+  /// 菜单就时灵时不灵。放到独立对话框里，两个需求各自有明确的入口。
+  void _showSelectable(BuildContext context, String text) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('选择文本'),
+        content: SingleChildScrollView(
+          child: SelectableText(text, style: const TextStyle(fontSize: 14.5)),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: text));
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已复制全部'), duration: Duration(seconds: 1)),
+              );
+            },
+            child: const Text('全选并复制'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('关闭'),
+          ),
+        ],
       ),
     );
   }

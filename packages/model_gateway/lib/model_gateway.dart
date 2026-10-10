@@ -12,9 +12,9 @@
 ///
 /// ```dart
 /// final config = ProviderConfig.openAiCompat(
-///   baseUrl: 'http://103.236.91.136:52165/v1',
+///   baseUrl: 'https://api.deepseek.com/v1',
 ///   apiKey: 'sk-...',
-///   defaultModel: 'deepseek-v4.1-flash',
+///   defaultModel: 'deepseek-chat',
 /// );
 /// final gateway = HttpModelGateway(config: config);
 ///
