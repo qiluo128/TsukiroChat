@@ -67,7 +67,10 @@ class AgentListPage extends ConsumerWidget {
             // 不是 WebView，也不吃滚动）。
             const Positioned.fill(
               child: IgnorePointer(
-                child: PluginSlot(slot: 'home.background'),
+                // **fill**：粒子要拿到整层的尺寸。
+                // 默认的横向布局会把它塞进 Row(mainAxisSize: min)，
+                // 那样 CustomPaint 拿不到尺寸，渲染成 0×0 —— 静默消失。
+                child: PluginSlot(slot: 'home.background', fill: true),
               ),
             ),
             Column(

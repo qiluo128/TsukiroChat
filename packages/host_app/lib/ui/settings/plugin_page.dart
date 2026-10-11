@@ -398,15 +398,32 @@ class _PluginCardState extends State<_PluginCard> {
             ],
           ),
 
-          // 插件声明的配置项。
+          // 插件声明的配置项 —— **做成独立页面的入口**，不嵌在这里。
           //
-          // **放在日志面板之前** —— 设置是用户主动想找的东西，
-          // 日志是出问题时才看的。顺序反了的话每次调设置都要先
-          // 划过一屏日志。
+          // 嵌在卡片里有两个问题：宽度太窄，不同控件（开关/滑块/下拉）
+          // 的内边距各不相同，看着永远没对齐；而且配置项一多，
+          // 卡片会被撑得很长，和"启用/停用/日志"挤在一起。
           //
-          // 没声明配置的插件这里什么都不显示（组件内部判了）。
-          if (widget.host != null)
-            PluginConfigSection(plugin: plugin, host: widget.host!),
+          // 没声明配置的插件**不显示这一项**（不是显示一个空设置页）。
+          if (widget.host != null && plugin.manifest.provides.hasConfig)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              leading: Icon(Icons.tune, size: 20, color: t.textMuted),
+              title: const Text('设置'),
+              subtitle: Text(
+                plugin.manifest.provides.config.map((f) => f.label).join('、'),
+                style: const TextStyle(fontSize: 12),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => openPluginConfig(
+                context,
+                plugin: plugin,
+                host: widget.host!,
+              ),
+            ),
 
           if (_expanded)
             _LogPanel(plugin: plugin),

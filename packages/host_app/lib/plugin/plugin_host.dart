@@ -111,8 +111,24 @@ class PluginHost extends ChangeNotifier {
   /// 在已销毁的宿主上 notifyListeners 会抛，而那时异常没人接。
   bool _disposed = false;
 
-  /// 同步读一个插件的配置值（来自缓存）。
-  Object? configValue(String pluginId, String key) => _configCache[pluginId]?[key];
+  /// 同步读一个插件的配置值。
+  ///
+  /// **缓存里没有时退回声明里的默认值**，而不是返回 null。
+  ///
+  /// refreshConfig 是异步的（扫描后 fire-and-forget），所以启动后有一小段
+  /// 时间缓存是空的。不退回默认值的话，声明里 "default": true 的开关
+  /// 在那段时间里会被判成关闭 —— 表现就是「插件装了但没生效」，
+  /// 过一会儿又自己好了。这种时序相关的 bug 最难查。
+  Object? configValue(String pluginId, String key) {
+    final cached = _configCache[pluginId];
+    if (cached != null && cached.containsKey(key)) return cached[key];
+
+    for (final f in _find(pluginId)?.manifest.provides.config ??
+        const <ConfigField>[]) {
+      if (f.key == key) return f.defaultValue;
+    }
+    return null;
+  }
 
   /// 某个插件当前的完整配置。
   Map<String, Object?> configOf(String pluginId) =>

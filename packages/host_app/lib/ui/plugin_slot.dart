@@ -30,6 +30,7 @@ class PluginSlot extends ConsumerWidget {
     required this.slot,
     this.context = const <String, dynamic>{},
     this.axis = Axis.horizontal,
+    this.fill = false,
     this.emptyPlaceholder,
   });
 
@@ -40,6 +41,16 @@ class PluginSlot extends ConsumerWidget {
 
   /// 排布方向。工具栏类插槽横向，区块类插槽纵向。
   final Axis axis;
+
+  /// **铺满**：把插槽的完整尺寸交给子节点，不做 Row/Column 包装。
+  ///
+  /// 背景层、粒子、整块自绘内容必须用这个 —— 它们要的是「确切尺寸」，
+  /// 而横向那个包装是 `Row(mainAxisSize: min)`，子节点在里面
+  /// **拿不到任何尺寸**，一个 CustomPaint 会渲染成 0×0（静默消失）。
+  ///
+  /// 多个插件注册到同一个 fill 插槽时叠着画（Stack），
+  /// 因为它们都是「背景」这类整层内容。
+  final bool fill;
 
   /// 没有插件占用这个插槽时显示什么。默认什么都不显示。
   final Widget? emptyPlaceholder;
@@ -74,6 +85,14 @@ class PluginSlot extends ConsumerWidget {
           host: host,
         ),
     ];
+
+    // 铺满模式：直接把尺寸交出去，**不包装**。
+    if (fill) {
+      if (children.length == 1) return children.first;
+      // 多个就叠着画 —— fill 插槽承载的是整层内容（背景、粒子），
+      // 纵向排会把它们各切一块，那不是「背景」该有的样子
+      return Stack(children: children);
+    }
 
     if (axis == Axis.horizontal) {
       return SingleChildScrollView(
