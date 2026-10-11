@@ -330,7 +330,14 @@ class _BubbleBody extends StatelessWidget {
       children: <Widget>[
         if (isThinkingOnly)
           Text('（思考中）', style: style?.copyWith(color: t.textMuted)),
-        SelectableText(
+        // **普通 Text，不是 SelectableText。**
+        //
+        // 用 SelectableText 的话，它自己会在命中测试里吃掉长按 ——
+        // 我们的菜单就时灵时不灵，用户觉得"长按被识别成选择文字"。
+        //
+        // 选择文本的入口放到长按菜单里（微信/Telegram 就是这个做法），
+        // 两个需求各自有明确入口，不再抢同一个手势。
+        Text(
           text,
           style: style,
         ),
@@ -484,7 +491,9 @@ class _ReasoningPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          SelectableText(
+          // 思维链同理：普通 Text。它是折叠面板里的辅助信息，
+          // 没有理由为它牺牲整条消息的长按。
+          Text(
             text,
             style: TextStyle(fontSize: 12, color: t.textMuted, height: 1.5),
           ),

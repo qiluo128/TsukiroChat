@@ -38,7 +38,11 @@ class _ProviderEditPageState extends ConsumerState<ProviderEditPage> {
 
   ProviderProtocol _protocol = ProviderProtocol.openai;
   bool _loaded = false;
-  bool _obscureKey = true;
+  /// 是否遮住 API Key。**默认不遮。**
+  ///
+  /// 见输入框那里的说明：没人手打 100 位的 key，
+  /// 而遮住就没法核对粘贴是否完整 —— 那才是真正会踩的坑。
+  bool _obscureKey = false;
 
   _TestPhase _phase = _TestPhase.idle;
   ConnectionCheck? _result;
@@ -160,23 +164,41 @@ class _ProviderEditPageState extends ConsumerState<ProviderEditPage> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _apiKey,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     labelText: 'API Key',
-                    hintText: 'sk-…',
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureKey
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                        size: 18,
-                      ),
-                      onPressed: () => setState(() => _obscureKey = !_obscureKey),
-                    ),
+                    hintText: '粘贴即可，sk-…',
+                    // **默认明文。**
+                    //
+                    // 原先是 obscureText，理由大概是"密钥不该露在屏幕上"。
+                    // 但那是个错误的安全感，代价却很大：
+                    //
+                    //   - 没人手打 100 位的 key，都是粘贴的
+                    //   - 粘贴完看不见，就没法核对是**粘全了**还是**多粘了**
+                    //     （多一个空格、少一位，表现都是"认证失败"，
+                    //      而用户会去怀疑服务商）
+                    //   - 密钥真实存储在数据库里，遮住输入框保护不了任何东西
+                    //
+                    // 所以默认显示。想遮的话（比如有人凑过来）有个开关。
+                    helperText: '粘贴后请核对一下有没有多出空格或换行',
                   ),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13.5),
                   obscureText: _obscureKey,
                   autocorrect: false,
                   enableSuggestions: false,
                   onChanged: (_) => _invalidateResult(),
+                ),
+                // 遮住 / 显示。默认显示，所以按钮出现在下面而不是当 suffixIcon ——
+                // suffixIcon 会占掉输入区宽度，而这里经常要核对一长串字符。
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() => _obscureKey = !_obscureKey),
+                    icon: Icon(
+                      _obscureKey ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                      size: 16,
+                    ),
+                    label: Text(_obscureKey ? '显示' : '遮住'),
+                  ),
                 ),
               ],
             ),
