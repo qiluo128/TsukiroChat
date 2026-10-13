@@ -114,16 +114,23 @@ class _ConfigFieldTile extends StatelessWidget {
     Future<void> write(Object? next) => host.setConfig(plugin.id, field.key, next);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.only(bottom: 18),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        // **stretch**：让标题、滑块、下拉、输入框**同宽**。
+        // 用 start 的话它们各自按内容宽度收缩，左边虽齐、右边参差，
+        // 一眼看上去就是没对齐。
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           // ── 标题行 ──
-          // 用同一行放"标签 + 内联控件"（开关这种小的），
-          // 大的控件（滑块、下拉、输入框）放到下面一行，
-          // 但**左边起始位置完全一样**。
+          //
+          // **center 对齐**，不是 start。
+          //
+          // 上一版用 start + 给数字硬加 `top: 2` 凑基线，结果是
+          // 标签、开关、数字三者各偏几个像素 —— 因为它们的自然高度
+          // 本来就不同（文字 ~19px、Switch 32px、数字 ~19px），
+          // 靠 start 对齐顶部只会让视觉重心错开。
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
               Expanded(
                 child: Text(
@@ -132,27 +139,28 @@ class _ConfigFieldTile extends StatelessWidget {
                     fontSize: t.font.body.toDouble(),
                     fontWeight: FontWeight.w500,
                     color: t.text,
+                    height: 1.25,
                   ),
                 ),
               ),
+              // Switch **不塞进固定高度的盒子**。
+              //
+              // M3 的 Switch 是 32 高、触摸目标是 48 —— 塞进
+              // SizedBox(height: 28) 会把它压变形并裁掉触摸区。
               if (field.type == 'toggle')
-                SizedBox(
-                  height: 28,
-                  child: Switch(
-                    value: value == true,
-                    onChanged: (v) => write(v),
-                  ),
+                Switch(
+                  value: value == true,
+                  onChanged: (v) => write(v),
                 ),
               if (field.type == 'number')
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    '${((value as num?) ?? (field.defaultValue as num?) ?? 0).round()}',
-                    style: TextStyle(
-                      fontSize: t.font.body.toDouble(),
-                      color: t.primary,
-                      fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-                    ),
+                Text(
+                  '${((value as num?) ?? (field.defaultValue as num?) ?? 0).round()}',
+                  style: TextStyle(
+                    fontSize: t.font.body.toDouble(),
+                    color: t.primary,
+                    fontWeight: FontWeight.w600,
+                    // 等宽数字：拖动时数字不会左右跳
+                    fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
                   ),
                 ),
             ],
@@ -162,20 +170,32 @@ class _ConfigFieldTile extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               field.description!,
-              style: TextStyle(fontSize: t.font.caption.toDouble(), color: t.textMuted),
+              style: TextStyle(
+                fontSize: t.font.caption.toDouble(),
+                color: t.textMuted,
+                height: 1.35,
+              ),
             ),
           ],
 
-          // ── 控件区（需要整行的类型） ──
+          // ── 控件区（整行宽） ──
+          //
+          // 给 Slider 一个小的水平 padding：默认内边距太大，
+          // 滑轨起点会明显缩在标签右边；设成 0 又会让滑块在两端被裁掉一半。
+          // 6 是个折中 —— 视觉上起点基本与标签齐平，两端也不裁。
           if (field.type == 'number')
-            Slider(
-              value: ((value as num?) ?? (field.defaultValue as num?) ?? 0)
-                  .toDouble()
-                  .clamp((field.min ?? 0).toDouble(), (field.max ?? 100).toDouble()),
-              min: (field.min ?? 0).toDouble(),
-              max: (field.max ?? 100).toDouble(),
-              divisions: ((field.max ?? 100) - (field.min ?? 0)).clamp(1, 20).round(),
-              onChanged: (v) => write(v.round()),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Slider(
+                value: ((value as num?) ?? (field.defaultValue as num?) ?? 0)
+                    .toDouble()
+                    .clamp((field.min ?? 0).toDouble(), (field.max ?? 100).toDouble()),
+                min: (field.min ?? 0).toDouble(),
+                max: (field.max ?? 100).toDouble(),
+                divisions: ((field.max ?? 100) - (field.min ?? 0)).clamp(1, 20).round(),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                onChanged: (v) => write(v.round()),
+              ),
             ),
 
           if (field.type == 'select')
