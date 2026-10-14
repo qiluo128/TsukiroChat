@@ -4,6 +4,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:model_gateway/model_gateway.dart';
 
@@ -177,29 +178,46 @@ class _ProviderEditPageState extends ConsumerState<ProviderEditPage> {
                     //     （多一个空格、少一位，表现都是"认证失败"，
                     //      而用户会去怀疑服务商）
                     //   - 密钥真实存储在数据库里，遮住输入框保护不了任何东西
-                    //
-                    // 所以默认显示。想遮的话（比如有人凑过来）有个开关。
-                    helperText: '粘贴后请核对一下有没有多出空格或换行',
                   ),
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 13.5),
                   obscureText: _obscureKey,
-                  autocorrect: false,
-                  enableSuggestions: false,
+                  // **不关自动更正，也不关联想。**
+                  //
+                  // 之前两个都设成 false，本意是"别让输入法帮倒忙"。
+                  // 但 Android 会因此**把整条联想栏关掉** —— 键盘看起来
+                  // 就成了一把密码键盘。而 key 是粘贴的，关掉联想没有任何收益，
+                  // 却让输入框看起来"不对劲"。
+                  keyboardType: TextInputType.text,
                   onChanged: (_) => _invalidateResult(),
                 ),
-                // 遮住 / 显示。默认显示，所以按钮出现在下面而不是当 suffixIcon ——
-                // suffixIcon 会占掉输入区宽度，而这里经常要核对一长串字符。
+                // 从剪贴板粘贴。
+                //
+                // 存在的理由不是"省事"，而是**粘贴是最容易出错的一步**：
+                // 从浏览器复制时经常带上尾随换行或空格，而它们
+                // 看起来和没有一模一样 —— 表现就是"认证失败"。
+                // 这个按钮会顺便把首尾空白剪掉。
                 Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => setState(() => _obscureKey = !_obscureKey),
-                    icon: Icon(
-                      _obscureKey ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                      size: 16,
-                    ),
-                    label: Text(_obscureKey ? '显示' : '遮住'),
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 4,
+                    children: <Widget>[
+                      TextButton.icon(
+                        onPressed: _pasteKey,
+                        icon: const Icon(Icons.content_paste, size: 16),
+                        label: const Text('从剪贴板粘贴'),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => setState(() => _obscureKey = !_obscureKey),
+                        icon: Icon(
+                          _obscureKey ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          size: 16,
+                        ),
+                        label: Text(_obscureKey ? '显示' : '遮住'),
+                      ),
+                    ],
                   ),
                 ),
+
               ],
             ),
           ),
@@ -424,6 +442,36 @@ class _ProviderEditPageState extends ConsumerState<ProviderEditPage> {
   ///
   /// 只比主机名：用户可能在预设基础上改了版本段，那仍然是同一个服务商。
   ProviderPreset? _matchedPreset() => presetForUrl(_baseUrl.text);
+
+  /// 从剪贴板粘贴，并**剪掉首尾空白**。
+  ///
+  /// 剪掉是关键：从浏览器复制 key 时经常带尾随换行，
+  /// 而它在输入框里看不出来 —— 表现就是"认证失败"，
+  /// 然后用户会去怀疑服务商、怀疑代码。
+  Future<void> _pasteKey() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final raw = data?.text ?? '';
+    final text = raw.trim();
+    if (!mounted) return;
+
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('剪贴板里没有文本'), duration: Duration(seconds: 2)),
+      );
+      return;
+    }
+
+    setState(() => _apiKey.text = text);
+    _invalidateResult();
+
+    final trimmed = raw.length - text.length;
+    if (trimmed > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('已粘贴，并去掉了 $trimmed 个多余的空格或换行'),
+        duration: const Duration(seconds: 2),
+      ));
+    }
+  }
 
   Future<void> _pickPreset() async {
     final picked = await showModalBottomSheet<ProviderPreset>(

@@ -406,22 +406,48 @@ class _PluginCardState extends State<_PluginCard> {
           //
           // 没声明配置的插件**不显示这一项**（不是显示一个空设置页）。
           if (widget.host != null && plugin.manifest.provides.hasConfig)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              leading: Icon(Icons.tune, size: 20, color: t.textMuted),
-              title: const Text('设置'),
-              subtitle: Text(
-                plugin.manifest.provides.config.map((f) => f.label).join('、'),
-                style: const TextStyle(fontSize: 12),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: const Icon(Icons.chevron_right, size: 18),
+            // **不用 ListTile**，自己拼一行。
+            //
+            // ListTile 的 minLeadingWidth 默认 40：leading 图标（20 宽）
+            // 被放进一个至少 40 宽的槽位里，于是它距卡片左边约 10px，
+            // 而 trailing 的 chevron 贴着右边 —— 一左一右不对称，
+            // 看起来就是"图标缩进去了"。
+            //
+            // 自己拼的话左右都由 Padding 说了算，天然对称。
+            // 横向 14 与下面的「申请的权限」「标签」两行一致。
+            InkWell(
               onTap: () => openPluginConfig(
                 context,
                 plugin: plugin,
                 host: widget.host!,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.tune, size: 20, color: t.textMuted),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text('设置', style: TextStyle(fontSize: t.font.body.toDouble())),
+                          const SizedBox(height: 2),
+                          Text(
+                            plugin.manifest.provides.config
+                                .map((f) => f.label)
+                                .join('、'),
+                            style: TextStyle(fontSize: 12, color: t.textMuted),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(Icons.chevron_right, size: 18, color: t.textMuted),
+                  ],
+                ),
               ),
             ),
 
