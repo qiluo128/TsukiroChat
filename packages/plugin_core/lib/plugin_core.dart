@@ -11,7 +11,7 @@
 /// |---|---|---|
 /// | 能力 | 原语是**数据**，加原语 = `registry.register(spec)` | [PrimitiveRegistry] |
 /// | 时机 | 钩子是**公开相位**，加时机 = 加枚举项 + 宿主 `emit` | [HookBus] |
-/// | 位置 | 插槽是**字符串**，加位置 = UI 里多挂一个 `SlotHost` | `SlotRegistry`（待做） |
+/// | 位置 | 插槽是**字符串**，加位置 = UI 里多挂一个 `SlotHost` | `SlotRegistry` |
 ///
 /// ## 用法概览
 ///

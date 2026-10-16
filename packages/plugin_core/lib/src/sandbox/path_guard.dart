@@ -97,6 +97,38 @@ class SandboxPathGuard {
       throw TsukiroException.sandboxViolation(userPath, reason: '不接受 HOME 展开路径');
     }
 
+    // ── 4.5 每个路径段的尾随空格与点 ──
+    //
+    // **这一条是补一个真实的绕过。**
+    //
+    // Windows 的 Win32 层会剥掉路径段结尾的空格与点：
+    // `.. ` → `..`，`a .` → `a`。
+    //
+    // 而下面的 posix.normalize 不做这件事 —— 它把 `.. ` 当成一个
+    // 普通目录名，于是：
+    //
+    //   `.. `  →  normalize 后仍是 `.. `  →  既不等于 `..`、也不以 `../` 开头
+    //          →  **通过词法检查**
+    //   `isWithinRoot('<root>\.. ')`  →  前缀匹配  →  **也通过**
+    //   但文件系统打开的是 `<root>\..` = 父目录
+    //
+    // 也就是说「词法层认为它在沙箱内，文件系统认为它在沙箱外」。
+    // 两边对同一个字符串的理解不一致，就是漏洞。
+    //
+    // **做法是拒绝，不是归一。**
+    // 归一要精确复刻 Windows 的规则（尾随点全剥？空格全剥？`...` 变成什么？），
+    // 复刻错一处就又是一个洞。而我们没有义务支持这种文件名。
+    for (final segment in unified.split('/')) {
+      if (segment.isEmpty || segment == '.' || segment == '..') continue;
+      if (segment.endsWith(' ') || segment.endsWith('.')) {
+        throw TsukiroException.sandboxViolation(
+          userPath,
+          reason: '路径段「$segment」以空格或点结尾 —— '
+              'Windows 会剥掉它们，导致词法检查与实际打开的不是同一个文件',
+        );
+      }
+    }
+
     // ── 5. 用 POSIX 语义规范化，再检查是否向上逃逸 ──
     //     'a/../../b' → '../b'   → 拒绝
     //     'a/..'      → '.'      → 允许（即沙箱根）

@@ -17,6 +17,7 @@ import '../sandbox/path_guard.dart';
 import '../data/data_query.dart';
 import '../capability/capability.dart';
 import '../registry/slot_registry.dart';
+import '../registry/tool_registry.dart';
 import '../ui/ui_node.dart';
 import 'host_services.dart';
 import 'primitive_registry.dart';
@@ -30,6 +31,9 @@ const Map<String, PrimitiveHandler> demoPrimitiveHandlers = <String, PrimitiveHa
   // ─────────────── 数据访问（docs/20 §4） ───────────────
   'capability.list': handleCapabilityList,
   'capability.invoke': handleCapabilityInvoke,
+
+  // 自省：让插件发现有哪些工具可用（**含别的插件提供的**）
+  'tool.list': handleToolList,
 
   'slot.list': handleSlotList,
 
@@ -406,6 +410,32 @@ Future<Object?> handleCapabilityInvoke(PrimitiveCall call) async {
   final request = CapabilityRequest.parse(call.args);
   final result = await caps.invoke(call.pluginId, request);
   return result.toJson();
+}
+
+/// `tool.list` —— 插件问「有哪些工具可用」。
+///
+/// **含别的插件提供的工具**，这是它存在的理由：
+/// 工具是"给模型用的"，能力是"给插件用的"，两套东西。
+/// 一个插件想知道"现在有没有能查天气的工具"，只能靠这个原语。
+///
+/// 和 `data.entities` / `slot.list` 同一个思路：让宿主的能力可被发现。
+Future<Object?> handleToolList(PrimitiveCall call) async {
+  final tools = call.require<ToolRegistry>();
+  // 用 all 而不是 visibleTools：这里是"有哪些工具存在"的自省，
+  // 而不是"我能调哪些"。名字与说明本来就是公开信息。
+  final list = tools.all
+      .map((t) => <String, dynamic>{
+            'name': t.name,
+            'originalName': t.originalName,
+            'description': t.description,
+            'pluginId': t.pluginId,
+            'parameters': t.parameters,
+          })
+      .toList(growable: false);
+  return <String, dynamic>{
+    'tools': list,
+    'count': list.length,
+  };
 }
 
 Future<Object?> handleSlotList(PrimitiveCall call) async {

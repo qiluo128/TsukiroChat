@@ -192,6 +192,47 @@ void main() {
     });
   });
 
+  group('尾随空格与点（Windows 会剥掉它们）', () {
+    // 这一组是**读代码发现的**，不是测试发现的。
+    //
+    // 机制：resolve 的第 5 步用 posix.normalize 判断有没有向上逃逸。
+    // 但 `.. `（`..` 后带一个空格）normalize 之后仍是 `.. ` ——
+    // 它既不等于 `..`，也不以 `../` 开头，于是**通过了词法检查**。
+    //
+    // 而 Windows 的 Win32 层会**剥掉路径段结尾的空格与点**，
+    // 所以文件系统实际打开的是 `..` —— 父目录。
+    //
+    // 也就是说：**词法层认为它在沙箱内，文件系统认为它在沙箱外。**
+    // 两边对同一个字符串的理解不一致，就是漏洞。
+    //
+    // 影响面：Android 是 Linux，不受影响；但这个项目也编 Windows。
+    test('`..` 后带尾随空格', () {
+      expect(() => guard.resolve('.. '), throwsSandboxViolation);
+    });
+
+    test('`..` 后带尾随点', () {
+      expect(() => guard.resolve('...'), throwsSandboxViolation);
+    });
+
+    test('中间段带尾随空格，配合 `..`', () {
+      expect(() => guard.resolve('a /../../x'), throwsSandboxViolation);
+    });
+
+    test('`.. /x`', () {
+      expect(() => guard.resolve('.. /x'), throwsSandboxViolation);
+    });
+
+    test('普通文件名的尾随空格也拒绝（不做归一，直接拒）', () {
+      // 拒绝而不是「剥掉再用」：我们没有义务支持这种文件名，
+      // 而「剥掉」要精确复刻 Windows 的规则，复刻错了又是一个洞。
+      expect(() => guard.resolve('a.txt '), throwsSandboxViolation);
+    });
+
+    test('合法路径里的空格不受影响', () {
+      expect(guard.resolve('my notes/a.txt'), isNotNull);
+    });
+  });
+
   group('大小写敏感性', () {
     test('Windows/macOS 下大小写不敏感比较', () {
       final g = SandboxPathGuard(root, caseSensitive: false);
