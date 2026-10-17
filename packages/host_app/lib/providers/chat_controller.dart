@@ -13,6 +13,8 @@ import '../data/models.dart';
 import '../data/repositories.dart';
 import '../services/utility_model.dart';
 import '../services/agent_context.dart';
+import '../services/host_tools.dart';
+import '../services/workspace_store.dart';
 import 'app_providers.dart';
 import 'plugin_providers.dart';
 
@@ -309,17 +311,50 @@ class ChatController {
       // 模型看到 "NO_RUNTIME" 会换一种方式回答，看到"没有这个工具"会以为用户没装。
       final pluginHost = _ref.read(pluginHostValueProvider);
 
+
       final loop = AgentLoop(
         gatekeeper: _ref.read(gatekeeperProvider),
         tools: _ref.read(toolRegistryProvider),
         hooks: _ref.read(hookBusProvider),
         gateway: gateway,
-        invokeTool: pluginHost != null
-            ? pluginHost.invokeTool
-            : (pluginId, handler, args) async => ToolInvocationResult.failure(
-                  'NO_RUNTIME',
-                  '插件系统还没就绪（$pluginId 的 $handler）',
-                ),
+        // **按来源分派。**
+        //
+        // 宿主工具（pluginId == hostPluginId）走本地实现，其余走插件运行时。
+        // 工作区是每智能体一个，所以这里把 agentId 捕获进来 ——
+        // 不能用实例状态，否则并发会话会串。
+        invokeTool: (pluginId, handler, args) async {
+          if (pluginId == hostPluginId) {
+            try {
+              // **只在这里才解析工作区。**
+              //
+              // 早点（send() 里）await 它会让整条聊天路径依赖 path_provider：
+              // 单测里没有平台通道会直接炸，更重要的是 ——
+              // 用户的工作区目录要是打不开，聊天也不该跟着失败。
+              // 文件工具打不开，只有文件工具该报错。
+              final store = await _ref.read(workspaceStoreProvider.future);
+              final result = await HostTools.execute(
+                store: store,
+                agentId: agent.id,
+                handler: handler,
+                args: args,
+              );
+              return ToolInvocationResult.ok(result);
+            } on TsukiroException catch (e) {
+              return ToolInvocationResult.failure(
+                errorCodeToString(e.code), e.message);
+            } catch (e) {
+              return ToolInvocationResult.failure('HOST_ERROR', '$e');
+            }
+          }
+          final host = pluginHost;
+          if (host == null) {
+            return ToolInvocationResult.failure(
+              'NO_RUNTIME',
+              '插件系统还没就绪（$pluginId 的 $handler）',
+            );
+          }
+          return host.invokeTool(pluginId, handler, args);
+        },
         // 人设可能为空 —— AgentLoop 在空串时**不注入 system 消息**，
         // 而不是替用户塞一句"你是一个助手"（见 docs/18 §6）
         persona: await AgentContextBuilder(repos).systemPrompt(

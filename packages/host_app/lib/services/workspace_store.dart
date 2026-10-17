@@ -78,6 +78,19 @@ class WorkspaceStore {
   Future<String> readText(String agentId, String rel) =>
       _files.readText(resolve(agentId, rel));
 
+  /// 工作区里有没有这个路径。
+  ///
+  /// `write_file` 靠它实现"第一版不覆盖" —— 覆盖是静默且不可逆的，
+  /// 而 AI 会以为"我改好了"。
+  Future<bool> exists(String agentId, String rel) async {
+    try {
+      return await _files.exists(resolve(agentId, rel));
+    } on TsukiroException {
+      // 路径非法按"不存在"处理，让调用方走自己的报错
+      return false;
+    }
+  }
+
   Future<void> writeText(String agentId, String rel, String text) =>
       _files.writeText(resolve(agentId, rel), text);
 

@@ -22,6 +22,7 @@ import '../services/data_access.dart';
 import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
 import '../plugin/host_files_impl.dart';
+import '../services/host_tools.dart';
 import '../plugin/plugin_host.dart';
 import '../plugin/surface_controller.dart';
 import '../plugin/app_keys.dart';
@@ -234,6 +235,12 @@ final FutureProvider<PluginHost> pluginHostProvider = FutureProvider<PluginHost>
   final slots = ref.watch(slotRegistryProvider);
   final surfaces = ref.watch(surfaceRegistryProvider);
   final audit = ref.watch(auditSinkProvider);
+
+  // **宿主工具在这里装。**
+  //
+  // 必须早于 AgentLoop 取工具表 —— 否则第一轮对话模型看不到文件工具，
+  // 用户会觉得"AI 不会用工作区"。
+  HostTools.install(registry: tools, gatekeeper: gatekeeper);
 
   final host = PluginHost(
     toolRegistry: tools,
