@@ -1,0 +1,119 @@
+/// AI 的工作区。
+///
+/// ## 它和插件沙箱是两回事
+///
+/// ```
+/// <app>/plugins/<id>/data/        插件沙箱，第三方代码，用户看不到
+/// <app>/workspaces/<agentId>/     AI 工作区，用户可见
+/// ```
+///
+/// **一个智能体只有一个根工作区**，里面是普通子文件夹。
+/// 这是刻意的：一个智能体是一个个体，它只有一套"我的手边"。
+///
+/// ## 为什么没有元数据表
+///
+/// 工作区里全是普通目录和文件 —— AI 执行 `mkdir` 就多一个文件夹，
+/// 删掉就少一个。宿主不需要记"有哪些工作区"，因为唯一的那个是
+/// 由 agentId 推导出来的。
+///
+/// 将来要挂载外部文件夹时，**挂载本身**需要一张表（否则重启后
+/// 不知道那个子目录指向哪里），但工作区本身仍然不需要。
+library;
+
+import 'dart:io';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:plugin_core/plugin_core.dart';
+
+import '../plugin/host_files_impl.dart';
+
+class WorkspaceStore {
+  WorkspaceStore._(this.root) : _files = const AppHostFiles();
+
+  /// `<app>/workspaces`
+  final String root;
+  final AppHostFiles _files;
+
+  static WorkspaceStore? _instance;
+
+  /// 打开（并创建根目录）。
+  ///
+  /// 做成单例是因为它只依赖应用文档目录，没有别的状态 ——
+  /// 每次进页面重建一遍反而要重新算路径。
+  static Future<WorkspaceStore> open() async {
+    final existing = _instance;
+    if (existing != null) return existing;
+
+    final docs = await getApplicationDocumentsDirectory();
+    final root = p.join(docs.path, 'workspaces');
+    await Directory(root).create(recursive: true);
+    return _instance = WorkspaceStore._(root);
+  }
+
+  /// 某个智能体的根工作区绝对路径。**不存在就创建。**
+  ///
+  /// 自动创建是有意的：用户第一次打开工作区不该看到一个错误，
+  /// 而 AI 第一次要写文件时也不该因为"目录不存在"失败。
+  String agentRoot(String agentId) {
+    final dir = Directory(p.join(root, agentId));
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    return dir.path;
+  }
+
+  /// 把相对路径解析成绝对路径，**过守门人**。
+  ///
+  /// 界面里传进来的 `rel` 也可能被拼出来（比如上一级目录返回 `..`），
+  /// 所以这里同样不能信它。
+  String resolve(String agentId, String rel) {
+    final base = agentRoot(agentId);
+    if (rel.isEmpty || rel == '.') return base;
+    return SandboxPathGuard(base).resolveAndVerify(rel);
+  }
+
+  Future<List<Map<String, dynamic>>> list(String agentId, String rel) =>
+      _files.list(resolve(agentId, rel));
+
+  Future<String> readText(String agentId, String rel) =>
+      _files.readText(resolve(agentId, rel));
+
+  Future<void> writeText(String agentId, String rel, String text) =>
+      _files.writeText(resolve(agentId, rel), text);
+
+  Future<void> delete(String agentId, String rel, {bool recursive = false}) =>
+      _files.delete(resolve(agentId, rel), recursive: recursive);
+
+  Future<void> createDir(String agentId, String rel) async {
+    final base = agentRoot(agentId);
+    final abs = SandboxPathGuard(base).resolveAndVerify(rel);
+    await Directory(abs).create(recursive: true);
+  }
+
+  /// 工作区占了多少字节。
+  ///
+  /// 界面上要显示 —— 用户有权知道 AI 在手机上占了多少空间。
+  Future<int> totalBytes(String agentId) async {
+    final entries = await _files.list(agentRoot(agentId), recursive: true);
+    var sum = 0;
+    for (final e in entries) {
+      if (e['isDirectory'] != true) sum += (e['size'] as int?) ?? 0;
+    }
+    return sum;
+  }
+}
+
+/// 工作区存储。
+///
+/// 用 `AsyncProvider` 是因为要等 `getApplicationDocumentsDirectory()`。
+final FutureProvider<WorkspaceStore> workspaceStoreProvider =
+    FutureProvider<WorkspaceStore>((ref) => WorkspaceStore.open());
+
+String formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+}

@@ -12,6 +12,7 @@ import '../providers/chat_controller.dart';
 import '../providers/plugin_providers.dart';
 import '../theme/app_theme.dart';
 import 'message_bubble.dart';
+import 'workspace_page.dart';
 import 'plugin_slot.dart';
 import 'user_error.dart';
 
@@ -100,6 +101,29 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               color: _showReasoning ? t.primary : null,
             ),
             onPressed: () => setState(() => _showReasoning = !_showReasoning),
+          ),
+          // 工作区入口。
+          //
+          // **放在这里而不是设置里**：它是「这个智能体」的东西，
+          // 和当前对话同一个上下文。而 Android 11+ 上系统文件管理器
+          // 看不到应用私有目录 —— 这个入口是用户看到 AI 产出的唯一途径。
+          IconButton(
+            tooltip: '工作区',
+            icon: const Icon(Icons.folder_outlined),
+            // agent 还没加载出来时禁用（而不是打开一个空工作区）
+            onPressed: agent == null
+                ? null
+                : () {
+                    final a = agent;
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => WorkspacePage(
+                          agentId: a.id,
+                          agentName: a.name,
+                        ),
+                      ),
+                    );
+                  },
           ),
         ],
       ),
