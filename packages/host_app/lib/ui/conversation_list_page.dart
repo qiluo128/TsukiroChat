@@ -14,6 +14,7 @@ import '../providers/app_providers.dart';
 import '../providers/plugin_providers.dart';
 import '../theme/app_theme.dart';
 import 'agent_edit_page.dart';
+import 'workspace_page.dart';
 import 'chat_page.dart';
 import 'plugin_slot.dart';
 
@@ -55,6 +56,26 @@ class _ConversationListPageState extends ConsumerState<ConversationListPage>
       appBar: AppBar(
         title: Text(agent?.name ?? '智能体'),
         actions: <Widget>[
+          // 工作区入口。
+          //
+          // **放在这里而不是聊天页**：工作区是"这个智能体"的东西，
+          // 而这个页面已经在智能体上下文里了 —— 少点一层。
+          // 之前放在聊天页，用户得先点进一个对话才看得到它。
+          if (agent != null)
+            IconButton(
+              tooltip: '工作区',
+              icon: const Icon(Icons.folder_outlined),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => WorkspacePage(
+                      agentId: agent.id,
+                      agentName: agent.name,
+                    ),
+                  ),
+                );
+              },
+            ),
           // 插件插槽：智能体级操作。
           // 插件可以往这里塞按钮（比如「查看 AI 心情」「导出对话」）。
           PluginSlot(
