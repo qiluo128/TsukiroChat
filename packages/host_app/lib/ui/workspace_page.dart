@@ -6,17 +6,14 @@
 /// 基本看不到 `/Android/data`。
 ///
 /// 也就是说：**这个页面是用户看到 AI 产出的唯一入口。**
-/// 没有它，AI 在工作区里写了一堆文件，用户永远不知道。
-///
-/// 所以它不是"锦上添花的调试工具"，是工作区这个功能成立的前提。
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../services/workspace_store.dart';
-import '../../theme/app_theme.dart';
-import '../../theme/design_tokens.dart';
+import '../services/workspace_store.dart';
+import '../theme/app_theme.dart';
+import '../theme/design_tokens.dart';
 
 class WorkspacePage extends ConsumerStatefulWidget {
   const WorkspacePage({super.key, required this.agentId, required this.agentName});
@@ -34,6 +31,7 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
   List<Map<String, dynamic>> _entries = <Map<String, dynamic>>[];
   bool _loading = true;
   String? _error;
+  WorkspaceStore? _store;
 
   @override
   void initState() {
@@ -41,13 +39,23 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
   }
 
+  Future<WorkspaceStore> _getStore() async {
+    final cached = _store;
+    if (cached != null) return cached;
+    final store = await ref.read(workspaceStoreProvider.future);
+    _store = store;
+    return store;
+  }
+
+  String _rel(String name) => _dir.isEmpty ? name : '$_dir/$name';
+
   Future<void> _reload() async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final store = await ref.read(workspaceStoreProvider.future);
+      final store = await _getStore();
       final list = await store.list(widget.agentId, _dir);
       if (!mounted) return;
       setState(() {
@@ -61,18 +69,6 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
         _loading = false;
       });
     }
-  }
-
-  WorkspaceStore? _store;
-
-  Future<WorkspaceStore> _getStore() async {
-    final cached = _store;
-    if (cached != null) return cached;
-// 赋值表达式的类型是变量的声明类型（WorkspaceStore?），
-    // 所以不能直接 return 它 —— 先落到局部变量再分别处理。
-    final store = await ref.read(workspaceStoreProvider.future);
-    _store = store;
-    return store;
   }
 
   Future<void> _enter(String name) async {
@@ -90,7 +86,6 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
-    final crumbs = _dir.isEmpty ? '根目录' : _dir;
 
     return Scaffold(
       appBar: AppBar(
@@ -117,7 +112,7 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
         children: <Widget>[
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             color: t.surface,
             child: Row(
               children: <Widget>[
@@ -129,7 +124,7 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
                   ),
                 Expanded(
                   child: Text(
-                    crumbs,
+                    _dir.isEmpty ? '根目录' : _dir,
                     style: TextStyle(fontSize: 12, color: t.textMuted),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -156,7 +151,8 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
             children: <Widget>[
               Icon(Icons.folder_off_outlined, size: 40, color: tokens.textMuted),
               const SizedBox(height: 8),
-              Text(_error!, textAlign: TextAlign.center,
+              Text(_error!,
+                  textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, color: tokens.textMuted)),
             ],
           ),
@@ -183,7 +179,8 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
 
     return ListView.separated(
       itemCount: _entries.length,
-      separatorBuilder: (_, _) => Divider(height: 1, color: tokens.divider.withValues(alpha: 0.5)),
+      separatorBuilder: (_, _) =>
+          Divider(height: 1, color: tokens.divider.withValues(alpha: 0.5)),
       itemBuilder: (context, i) {
         final e = _entries[i];
         final name = e['name'] as String? ?? '';
@@ -201,44 +198,133 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
             isDir ? '文件夹' : formatBytes(size),
             style: TextStyle(fontSize: 11.5, color: tokens.textMuted),
           ),
-          trailing: IconButton(
-            icon: const Icon(Icons.delete_outline, size: 18),
-            onPressed: () => _delete(name, isDir),
-          ),
-          onTap: () => isDir ? _enter(name) : _preview(name),
+          // **长按出菜单**，而不是每行挂一个删除按钮。
+          //
+          // 一行挂一个按钮的话，点头部是"打开"、点按钮是"删掉"，
+          // 两个动作贴得太近，误删风险高。
+          onTap: () => isDir ? _enter(name) : _openFile(name),
+          onLongPress: () => _showActions(name, isDir),
         );
       },
     );
   }
 
-  Future<void> _preview(String name) async {
-    final rel = _dir.isEmpty ? name : '$_dir/$name';
-    try {
-      final store = await _getStore();
-      final text = await store.readText(widget.agentId, rel);
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: SingleChildScrollView(
-              child: SelectableText(text, style: const TextStyle(fontSize: 13)),
+  /// 长按菜单。
+  Future<void> _showActions(String name, bool isDir) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListTile(
+              dense: true,
+              title: Text(name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
             ),
-          ),
-          actions: <Widget>[
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+            const Divider(height: 1),
+            if (!isDir)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined, size: 20),
+                title: const Text('编辑'),
+                onTap: () => Navigator.pop(ctx, 'edit'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline, size: 20),
+              title: const Text('重命名'),
+              onTap: () => Navigator.pop(ctx, 'rename'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_outline, size: 20),
+              title: const Text('移动'),
+              onTap: () => Navigator.pop(ctx, 'move'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, size: 20),
+              title: const Text('删除'),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
           ],
         ),
+      ),
+    );
+    if (action == null || !mounted) return;
+
+    switch (action) {
+      case 'edit':
+        await _openFile(name);
+      case 'rename':
+        await _rename(name);
+      case 'move':
+        await _move(name);
+      case 'delete':
+        await _delete(name, isDir);
+    }
+  }
+
+  Future<void> _openFile(String name) async {
+    try {
+      final store = await _getStore();
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => WorkspaceFilePage(
+            agentId: widget.agentId,
+            relativePath: _rel(name),
+            fileName: name,
+            store: store,
+          ),
+        ),
       );
+      // 编辑页可能改了内容，回来刷新大小
+      if (mounted) await _reload();
     } catch (e) {
-      // 二进制文件读不成 utf8 —— 说清楚，而不是弹一堆乱码或崩掉
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('这个文件没法当文本打开（可能是图片或压缩包）：$e'),
+        content: Text('打不开：$e'),
         duration: const Duration(seconds: 3),
       ));
+    }
+  }
+
+  Future<void> _rename(String name) async {
+    final next = await _askName('重命名', initial: name);
+    if (next == null || next == name) return;
+    try {
+      final store = await _getStore();
+      final text = await store.readText(widget.agentId, _rel(name));
+      await store.writeText(widget.agentId, _rel(next), text);
+      await store.delete(widget.agentId, _rel(name));
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('重命名失败：$e')));
+    }
+  }
+
+  Future<void> _move(String name) async {
+    final target = await _askName(
+      '移动到哪个文件夹',
+      initial: _dir,
+      hint: '相对工作区根，留空表示根目录',
+    );
+    if (target == null) return;
+    final dest = target.isEmpty ? name : '$target/$name';
+    try {
+      final store = await _getStore();
+      // 先确保目标目录存在，否则写文件会在错的地方建
+      if (target.isNotEmpty) await store.createDir(widget.agentId, target);
+      final text = await store.readText(widget.agentId, _rel(name));
+      await store.writeText(widget.agentId, dest, text);
+      await store.delete(widget.agentId, _rel(name));
+      await _reload();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('移动失败：$e')));
     }
   }
 
@@ -251,20 +337,17 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
             ? '「$name」及其中的所有内容会被永久删除。'
             : '「$name」会被永久删除。'),
         actions: <Widget>[
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
-          ),
+              onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
         ],
       ),
     );
     if (ok != true) return;
-
-    final rel = _dir.isEmpty ? name : '$_dir/$name';
     try {
       final store = await _getStore();
-      await store.delete(widget.agentId, rel, recursive: true);
+      await store.delete(widget.agentId, _rel(name), recursive: true);
       await _reload();
     } catch (e) {
       if (!mounted) return;
@@ -276,10 +359,9 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
   Future<void> _newFolder() async {
     final name = await _askName('新建文件夹');
     if (name == null) return;
-    final rel = _dir.isEmpty ? name : '$_dir/$name';
     try {
       final store = await _getStore();
-      await store.createDir(widget.agentId, rel);
+      await store.createDir(widget.agentId, _rel(name));
       await _reload();
     } catch (e) {
       if (!mounted) return;
@@ -291,10 +373,9 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
   Future<void> _newFile() async {
     final name = await _askName('新建文件', hint: 'notes.txt');
     if (name == null) return;
-    final rel = _dir.isEmpty ? name : '$_dir/$name';
     try {
       final store = await _getStore();
-      await store.writeText(widget.agentId, rel, '');
+      await store.writeText(widget.agentId, _rel(name), '');
       await _reload();
     } catch (e) {
       if (!mounted) return;
@@ -303,8 +384,8 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     }
   }
 
-  Future<String?> _askName(String title, {String? hint}) async {
-    final controller = TextEditingController();
+  Future<String?> _askName(String title, {String? initial, String? hint}) async {
+    final controller = TextEditingController(text: initial ?? '');
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -325,6 +406,152 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
       ),
     );
     controller.dispose();
-    return (result == null || result.isEmpty) ? null : result;
+    return result;
+  }
+}
+
+/// 文件查看 / 编辑页。
+///
+/// **原来是弹对话框。** 改成整页的理由：
+///
+///   - 对话框里只看得见几行，长文本只能滚着看
+///   - 对话框不能编辑 —— 想改一个字得让 AI 改
+///   - 键盘弹起来会顶掉对话框的一半
+class WorkspaceFilePage extends StatefulWidget {
+  const WorkspaceFilePage({
+    super.key,
+    required this.agentId,
+    required this.relativePath,
+    required this.fileName,
+    required this.store,
+  });
+
+  final String agentId;
+  final String relativePath;
+  final String fileName;
+  final WorkspaceStore store;
+
+  @override
+  State<WorkspaceFilePage> createState() => _WorkspaceFilePageState();
+}
+
+class _WorkspaceFilePageState extends State<WorkspaceFilePage> {
+  final _controller = TextEditingController();
+  bool _loading = true;
+  bool _dirty = false;
+  String? _error;
+  String _original = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final text =
+          await widget.store.readText(widget.agentId, widget.relativePath);
+      if (!mounted) return;
+      setState(() {
+        _original = text;
+        _controller.text = text;
+        _loading = false;
+        _dirty = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      // 二进制文件读不成 utf8 —— 说清楚，而不是弹乱码
+      setState(() {
+        _error = '这个文件没法当文本打开（可能是图片或压缩包）\n\n$e';
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    try {
+      await widget.store
+          .writeText(widget.agentId, widget.relativePath, _controller.text);
+      if (!mounted) return;
+      setState(() {
+        _original = _controller.text;
+        _dirty = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已保存'), duration: Duration(seconds: 1)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('保存失败：$e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.fileName,
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+        actions: <Widget>[
+          if (_dirty)
+            IconButton(
+              tooltip: '撤销修改',
+              icon: const Icon(Icons.undo),
+              onPressed: () => setState(() {
+                _controller.text = _original;
+                _dirty = false;
+              }),
+            ),
+          IconButton(
+            tooltip: '保存',
+            icon: Icon(Icons.save_outlined, color: _dirty ? t.primary : null),
+            onPressed: _loading || _error != null ? null : _save,
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(_error!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 13, color: t.textMuted)),
+                  ),
+                )
+              : Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: TextField(
+                    controller: _controller,
+                    maxLines: null,
+                    expands: true,
+                    textAlignVertical: TextAlignVertical.top,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                      height: 1.45,
+                    ),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      hintText: '空文件',
+                    ),
+                    onChanged: (v) {
+                      final dirty = v != _original;
+                      if (dirty != _dirty) setState(() => _dirty = dirty);
+                    },
+                  ),
+                ),
+    );
   }
 }

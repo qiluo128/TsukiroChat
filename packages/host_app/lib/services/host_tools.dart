@@ -26,7 +26,12 @@ class HostTools {
   const HostTools._();
 
   /// 工具名 → handler 名。目前一一对应。
-  static const List<String> names = <String>['list_files', 'read_file', 'write_file'];
+  static const List<String> names = <String>[
+    'list_files',
+    'read_file',
+    'write_file',
+    'create_folder',
+  ];
 
   /// 宿主声明并持有的权限。
   ///
@@ -105,6 +110,21 @@ class HostTools {
       },
       permissions: <String>['fs.write'],
     ),
+    _ToolSpec(
+      name: 'create_folder',
+      description: '在我的工作区里新建一个文件夹。已存在就什么都不做。',
+      parameters: <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{
+          'path': <String, dynamic>{
+            'type': 'string',
+            'description': '相对工作区根的文件夹路径，可以多级（如 a/b/c）',
+          },
+        },
+        'required': <String>['path'],
+      },
+      permissions: <String>['fs.write'],
+    ),
   ];
 
   /// 执行一个宿主工具，返回给模型看的结果。
@@ -145,23 +165,32 @@ class HostTools {
           );
         }
 
+case 'create_folder':
+        final path = _requirePath(args);
+        await store.createDir(agentId, path);
+        return <String, dynamic>{'path': path, 'created': true};
+
       case 'write_file':
         final path = _requirePath(args);
         final text = args['text'] as String?;
         if (text == null) {
           throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 text');
         }
-        // **第一版不允许覆盖。**
+        // **覆盖必须显式要求。**
         //
-        // 见 docs/24 §7：先不给自己造一个"静默覆盖用户文件"的能力。
-        // 覆盖是静默且不可逆的 —— 用户看不出来发生了什么，
-        // 而 AI 会以为"我改好了"。
-        final absolute = store.resolve(agentId, path);
-        if (await store.exists(agentId, path)) {
+        // 直接允许覆盖的话，"写文件"这个动作会变得静默且不可逆：
+        // 用户看不出来发生了什么，而 AI 会以为"我改好了"。
+        //
+        // 所以做成一个显式开关 —— 模型要改已有文件必须传
+        // overwrite: true，这个参数会留在工具调用记录里，
+        // 事后能查"它是不是有意覆盖的"。
+        final overwrite = args['overwrite'] == true;
+        if (!overwrite && await store.exists(agentId, path)) {
           throw TsukiroException(
             TsukiroErrorCode.invalidArgs,
-            '工作区里已经有「$path」了。第一版不允许覆盖，请换一个文件名。',
-            details: <String, dynamic>{'path': path, 'absolute': absolute},
+            '工作区里已经有「$path」了。要修改它请传 overwrite: true，'
+            '否则换一个文件名。',
+            details: <String, dynamic>{'path': path, 'exists': true},
           );
         }
         await store.writeText(agentId, path, text);
