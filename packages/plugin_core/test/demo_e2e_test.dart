@@ -632,7 +632,7 @@ void main() {
       expect(rig.registry.domains, containsAll(<String>[
         'fs', 'sys', 'media', 'contact', 'sms', 'call', 'calendar', 'app',
         'notification', 'location', 'net', 'ui', 'state', 'crypto', 'a11y',
-        'screen', 'model', 'tool', 'event', 'log', 'mcp',
+        'screen', 'model', 'tool', 'event', 'mcp',
         'context', 'message', 'schedule', 'host', 'primitive', 'hook', 'slot',
         'data', 'memory', 'surface', 'config', 'agent', 'chat',
       ]));

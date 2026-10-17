@@ -400,14 +400,33 @@ final List<_E> _entries = <_E>[
   _E('tool.call', '调用工具（含其他插件提供的）'),
 
   // ───────────────────── 17. 事件 ─────────────────────
-  _E('event.on', '订阅事件'),
-  _E('event.emit', '发出事件（仅限自己的命名空间）'),
-  _E('event.off', '取消订阅'),
+  // ── 事件 ──
+  //
+  // **只留 emit。**
+  //
+  // `event.on` / `event.off` 原先是这里声明的，但订阅是**本地行为**：
+  // 插件在 JS 里 `tsukiro.event.on(name, fn)` 注册，宿主通过桥的
+  // `evt` 单向推送。那套机制早就通了，而且它才是对的 ——
+  // 订阅不需要往返请求，它就是个回调注册。
+  //
+  // 把"订阅"做成原语在结构上是说不通的：原语是请求/响应，
+  // 而订阅是"以后有事叫我"。声明它只会让插件作者去调一个
+  // 永远拿不到回调的东西。
+  //
+  // `emit` 保留：它的语义是**跨插件**发事件（仅限自己的命名空间），
+  // 和插件内部那个 `tsukiro.event.emit` 不是一件事。
+  _E('event.emit', '向其他插件发出事件（仅限自己的命名空间）'),
 
   // ───────────────────── 18. 日志 ─────────────────────
-  _E('log.info', '写信息日志'),
-  _E('log.warn', '写警告日志'),
-  _E('log.error', '写错误日志'),
+  // ── 日志：**没有原语** ──
+  //
+  // 原先声明了 `log.info/warn/error`，但它们和 `tsukiro.log.*` 重复：
+  // 那三个 JS 方法已经通过桥的 `evt` 把日志送进插件日志面板了。
+  //
+  // 再加一套原语版本，结果是**两条路径写同一个面板**，
+  // 然后慢慢分叉（一条带结构化 data，另一条不带；一条限流，另一条不限）。
+  //
+  // 所以整个 log 域被移除了。插件用 `tsukiro.log.info({message, data})`。
 
   // ───────────────────── 19. MCP（预留） ─────────────────────
   _E('mcp.serve', '暴露本地 MCP Server（预留）', permission: 'mcp'),
@@ -430,15 +449,15 @@ final List<_E> _entries = <_E>[
         'required': <String>['text'],
         'additionalProperties': false,
       }),
-  _E('context.append', '往对话末尾追加一条消息',
-      permission: 'context.write',
-      schema: _obj(<String, dynamic>{
-        'role': _str(enumValues: <String>['user', 'assistant', 'system']),
-        'content': _str(),
-      }, required: <String>['role', 'content'])),
-  _E('context.onBuild', '注册上下文组装钩子', permission: 'context.hook'),
-  _E('context.onBeforeModel', '注册调模型前的钩子', permission: 'context.hook'),
-  _E('context.onAfterModel', '注册模型返回后的钩子', permission: 'context.hook'),
+  // ── 删掉的三个 context.on* 与一个 context.append ──
+  //
+  // `context.onBuild` / `onBeforeModel` / `onAfterModel` 和
+  // `tsukiro.defineHook(phase, fn)` 是同一件事。HookBus 有 15 个相位，
+  // 而这里只声明了 3 个 —— 已经分叉了。留着它等于告诉插件
+  // "你可以用这个更少的子集"，那是误导。
+  //
+  // `context.append` 和已实现的 `message.append` 重复。
+  // 「往对话里追加一条消息」只有一种做法就够了。
 
   // ───────────────────── 21. 消息操作 ─────────────────────
   _E('message.get', '读取消息', permission: 'message.read'),

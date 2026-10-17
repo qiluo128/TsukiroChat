@@ -1,4 +1,4 @@
-﻿# 15 · 当前进度与验证报告
+# 15 · 当前进度与验证报告
 
 > 最后更新：本轮工作结束时。**这里的「已验证」都是本机真实跑出来的结果，不是计划。**
 
@@ -15,7 +15,7 @@
 | **Demo 可行性验证（无头）** | ✅ **四条流程全通** | `test/demo_e2e_test.dart` |
 | **真模型端到端** | ✅ **4 项全通** | `model_gateway/test/real_model_e2e_test.dart`，接真实中转站 |
 | 多协议模型接入 | ✅ OpenAI / Anthropic / Google + 模型表 | `packages/model_gateway` |
-| **原语 / 钩子可扩展性** | ✅ 已落地 | 35 域 112 条原语全量注册；钩子总线含错误隔离与超时 |
+| **原语 / 钩子可扩展性** | ✅ 已落地 | 34 域 112 条原语全量注册；钩子总线含错误隔离与超时 |
 | **L1 设计令牌（美化包）** | ✅ 已实现并校验 | 七组令牌白名单；未知令牌名报错并给候选；CSS 注入无从下手 |
 | **零代码插件** | ✅ 已支持 | 纯声明式插件可省略 `runtime`；`plugins/sakura-theme` 就是例子 |
 | 三个测试插件 + 一个美化包 | ✅ 完成 | `plugins/{time-plugin,translate-button,mini-game,sakura-theme}` |
@@ -90,7 +90,7 @@ $ dart test
 | **插件包检查** | `src/packaging/package_inspector.dart` | Zip Slip、符号链接、原生二进制、禁止目录、体积上限、zip bomb、manifest 定位（**纯逻辑，不含 zip 库**） |
 | **zip 适配层** | `src/packaging/zip_reader.dart` | `archive` 库适配；**只把通过检查的文件读进内存**（报错路径上不加载可疑内容） |
 | **原语注册表** | `src/primitive/primitive_registry.dart` | 全部原语调用的唯一入口；权限→参数→执行→审计一条流水线；`describe()` 自省 |
-| **原语目录** | `src/primitive/primitive_catalog.dart` | **35 个域 / 112 条原语全量注册**，Demo 只给 7 个真实现，其余是合法占位状态 |
+| **原语目录** | `src/primitive/primitive_catalog.dart` | **34 个域 / 112 条原语全量注册**，Demo 只给 7 个真实现，其余是合法占位状态 |
 | **宿主服务接口** | `src/primitive/host_services.dart` | `HostClock` / `HostUi` / `HostFiles` / `SandboxProvider` / `ModelGateway` / `MessageStore` / `ContextSink` / `HostScheduler` |
 | **服务注册表** | `src/primitive/service_registry.dart` | 按**类型**取服务，加宿主能力不改内核容器 |
 | **钩子总线** | `src/hook/hook_bus.dart` | 9 个相位 + 优先级确定性排序 + **错误隔离** + 超时 + 观察模式违约检测 |

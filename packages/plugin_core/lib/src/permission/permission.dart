@@ -158,11 +158,6 @@ const Map<String, PermissionSpec> permissionCatalog = <String, PermissionSpec>{
     PermissionLevel.install,
     '往 AI 上下文注入文本或追加消息（可撤销、有长度上限、记审计）',
   ),
-  'context.hook': PermissionSpec(
-    'context.hook',
-    PermissionLevel.install,
-    '注册上下文钩子，持续影响每一轮的上下文组装',
-  ),
 
   // ── 消息操作 ──
   'message.read': PermissionSpec('message.read', PermissionLevel.confirm, '读取消息内容，含全部历史对话'),
@@ -257,9 +252,6 @@ const Map<String, String> _exactPrimitivePermissions = <String, String>{
   // 上下文注入：单次写入 vs 持续钩子，风险不同档
   'context.inject': 'context.write',
   'context.append': 'context.write',
-  'context.onBuild': 'context.hook',
-  'context.onBeforeModel': 'context.hook',
-  'context.onAfterModel': 'context.hook',
 
   // 消息操作：读 / 写 / 主动发送 三档（发送会触发模型调用，单独一档）
   'message.get': 'message.read',

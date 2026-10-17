@@ -45,7 +45,7 @@ const int demoTemplateSetVersion = 2;
 ///
 /// 现在实现的是 `demoPrimitiveHandlers` 里那 7 个（sys.time / ui.toast /
 /// fs.read / model.chat / primitive.list / hook.phases / host.capabilities）。
-/// 其余 83 个已注册未实现 —— 插件调它们会拿到 `NOT_IMPLEMENTED`，
+/// 其余 77 个已注册未实现 —— 插件调它们会拿到 `NOT_IMPLEMENTED`，
 /// 这是**如实报错**，不是假装成功。
 /// 当前打开的对话（插件 `chat.*` 用）。
 ///

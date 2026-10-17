@@ -112,7 +112,7 @@ invoke(name)
 
 | | 做法 |
 |---|---|
-| 注册 | 把 35 个域的**全部**原语都注册进 `PrimitiveRegistry` |
+| 注册 | 把 34 个域的**全部**原语都注册进 `PrimitiveRegistry` |
 | 实现 | 只有 `sys.time` / `ui.toast` / `fs.read` / `model.chat` 有真实 handler |
 | 其余 | `implemented: false`，统一由注册表返回 `UNSUPPORTED` |
 
@@ -307,7 +307,7 @@ if (caps.primitives['context.inject']?.implemented) {
 | 插槽用枚举 | 加位置改核心 | 插槽名字符串 + 空结果兜底 |
 | manifest 字段"用到再加" | 旧插件必须改 | 一次留全，只解析不执行 |
 | 插件能力靠版本号猜 | 生态碎片化 | `describe()` 自省 |
-| Demo 只硬编码 118 个原语 | 框架退化成写死的功能表 | 全量注册 + `implemented: false` |
+| Demo 只硬编码 112 个原语 | 框架退化成写死的功能表 | 全量注册 + `implemented: false` |
 | 钩子同步执行 | 慢钩子直接卡 UI | 异步 + 超时 + 关键路径预算 |
 
 ---
