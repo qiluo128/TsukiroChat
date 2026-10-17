@@ -17,6 +17,15 @@ enum PermissionLevel {
   denied,
 }
 
+/// 宿主自己的标识。
+///
+/// **它不是插件。** 放在权限模块里是因为它只用于授权判断 ——
+/// 审计层也在用它（宿主调模型记 `__host__`），但那是记账用途。
+///
+/// 定义成常量而不是各写一遍字面量：两处写法不一致时，
+/// 门禁会把它当成未知插件而拒绝，表现为"宿主工具静默不可用"。
+const String hostPluginId = '__host__';
+
 /// 一条权限的定义。
 class PermissionSpec {
   const PermissionSpec(this.name, this.level, this.description);

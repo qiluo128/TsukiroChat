@@ -10,6 +10,7 @@
 library;
 
 import '../manifest/manifest.dart';
+import '../permission/permission.dart';
 import '../permission/gatekeeper.dart';
 
 /// 注册表里的一条工具。
@@ -139,6 +140,28 @@ class ToolRegistry {
 
     _byPlugin[manifest.id] = registered;
     return localConflicts;
+  }
+
+  /// 注册一个**属于宿主自己**的工具。
+  ///
+  /// 和 `registerPlugin` 并列，不是它的特例 —— 宿主不是插件，
+  /// 把宿主伪装成插件会让 manifest / 权限 / 沙箱这些概念全都变形。
+  ///
+  /// 重名时**直接抛错**，不像插件那样自动改名：
+  /// 插件重名是用户装了东西导致的运行时情况，宿主重名是编程错误，
+  /// 静默改名只会让"AI 调的工具和我以为的不是同一个"变成谜。
+  void registerHostTool(RegisteredTool tool) {
+    if (tool.pluginId != hostPluginId) {
+      throw ArgumentError.value(tool.pluginId, 'tool.pluginId',
+          '宿主工具的 pluginId 必须是 $hostPluginId');
+    }
+    final existing = _tools[tool.name];
+    if (existing != null) {
+      throw ArgumentError.value(tool.name, 'tool.name',
+          '工具名已被 ${existing.pluginId} 占用');
+    }
+    _tools[tool.name] = tool;
+    (_byPlugin[tool.pluginId] ??= <String>[]).add(tool.name);
   }
 
   /// 注销一个插件的全部工具。

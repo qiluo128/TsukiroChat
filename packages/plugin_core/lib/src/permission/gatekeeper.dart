@@ -259,6 +259,24 @@ class Gatekeeper {
     return GateResult.allow(permission);
   }
 
+  /// 登记宿主自己声明并持有的权限。
+  ///
+  /// **这不是"宿主免检"。** 登记之后，`check(hostPluginId, ...)` 仍然走
+  /// 完整判定链：
+  ///   - `denied` 级仍然拒绝
+  ///   - `confirm` 级仍然要求确认
+  ///   - 没登记的权限仍然 `notDeclared`
+  ///
+  /// 区别只在于"宿主是一个已知的、有声明的主体"。
+  ///
+  /// 为什么不直接在 `check` 里特判 hostPluginId：那样会把
+  /// "宿主的权限集合"变成一个**隐式**的东西，审计就说不清
+  /// "它凭什么能做这个"。登记之后，它和插件一样是显式声明的。
+  void registerHost(Set<String> declared) {
+    _declared[hostPluginId] = Set<String>.unmodifiable(declared);
+    _granted[hostPluginId] = Set<String>.unmodifiable(declared);
+  }
+
   /// 便捷方式：按原语名校验（内部查 [requiredPermissionFor]）。
   GateResult checkPrimitive(String pluginId, String primitive) =>
       check(pluginId, requiredPermissionFor(primitive));
