@@ -840,6 +840,12 @@ class PluginHost extends ChangeNotifier {
 
   InstalledPlugin? byId(String pluginId) => _find(pluginId);
 
+  /// 插件根目录。initialize() 之前是 null。
+  ///
+  /// `SandboxProvider` 靠它算插件数据目录 —— 服务注册早于初始化，
+  /// 所以那边是晚绑定的。
+  String? get rootDir => _rootDir;
+
   @override
   void dispose() {
     _disposed = true;

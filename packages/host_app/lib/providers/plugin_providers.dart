@@ -21,6 +21,7 @@ import '../services/media_store.dart';
 import '../services/data_access.dart';
 import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
+import '../plugin/host_files_impl.dart';
 import '../plugin/plugin_host.dart';
 import '../plugin/surface_controller.dart';
 import '../plugin/app_keys.dart';
@@ -161,6 +162,11 @@ final Provider<PrimitiveRegistry> primitiveRegistryProvider = Provider<Primitive
     ..put<PrimitiveRegistry>(registry)
     // tool.list 要自省工具表
     ..put<ToolRegistry>(ref.watch(toolRegistryProvider))
+      // **文件系统。** 这两个服务之前从来没注册过，
+      // 所以 fs.* 一调用就抛"宿主未注入服务"——
+      // 声明了 7 个原语，一个都跑不起来。
+      ..put<HostFiles>(const AppHostFiles())
+      ..put<SandboxProvider>(AppSandboxProvider())
     ..put<HookBus>(ref.watch(hookBusProvider))
     ..put<HostChatContext>(ref.watch(chatContextProvider))
     ..put<HostAgentState>(ref.watch(agentStateServiceProvider))
@@ -248,6 +254,11 @@ final FutureProvider<PluginHost> pluginHostProvider = FutureProvider<PluginHost>
   ref.onDispose(() => host.removeListener(bump));
 
   await host.initialize();
+
+  // 根目录只有 initialize() 之后才知道，所以在这里补上
+  final sandbox = primitives.services.get<SandboxProvider>();
+  if (sandbox is AppSandboxProvider) sandbox.pluginRoot = host.rootDir;
+
   ref.read(surfaceControllerProvider).attachHost(host);
   await _installDemoPluginsIfFirstRun(ref, host);
 

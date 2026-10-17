@@ -66,6 +66,11 @@ const Map<String, PrimitiveHandler> demoPrimitiveHandlers = <String, PrimitiveHa
   'ui.dialog': handleUiDialog,
   'ui.toast': handleUiToast,
   'fs.read': handleFsRead,
+  'fs.list': handleFsList,
+  'fs.write': handleFsWrite,
+  'fs.meta': handleFsMeta,
+  'fs.delete': handleFsDelete,
+  'fs.mkdir': handleFsMkdir,
   'model.chat': handleModelChat,
   'primitive.list': handlePrimitiveList,
   'hook.phases': handleHookPhases,
@@ -169,6 +174,94 @@ Future<Object?> handleFsRead(PrimitiveCall call) async {
     'path': rawPath,
     'bytes': utf8.encode(text).length,
   };
+}
+
+// ─────────── fs.list / fs.write / fs.meta / fs.delete / fs.mkdir ───────────
+//
+// 所有 fs 原语共用一个入口：**先拿沙箱根，再过守门人，最后才碰文件**。
+//
+// 「不允许自己拼路径」这条规则就是靠这一个函数强制执行的 ——
+// 任何一个 handler 自己拼一次路径，就是一次潜在的沙箱逃逸。
+// 所以新增 fs 原语时，唯一正确的写法是先调 `_resolveFsPath`。
+
+({String absolute, HostFiles files}) _resolveFsPath(PrimitiveCall call, String rawPath) {
+  final sandbox = call.require<SandboxProvider>();
+  final files = call.require<HostFiles>();
+
+  final root = sandbox.dataRootFor(call.pluginId);
+  if (root == null) {
+    throw TsukiroException(
+      TsukiroErrorCode.ioError,
+      '插件 ${call.pluginId} 的沙箱目录不存在',
+      details: <String, dynamic>{'pluginId': call.pluginId},
+    );
+  }
+  return (absolute: SandboxPathGuard(root).resolveAndVerify(rawPath), files: files);
+}
+
+String _fsPathArg(PrimitiveCall call) {
+  final path = call.args['path'] as String?;
+  if (path == null || path.isEmpty) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 path 参数');
+  }
+  return path;
+}
+
+Future<Object?> handleFsList(PrimitiveCall call) async {
+  final ctx = _resolveFsPath(call, _fsPathArg(call));
+  final recursive = call.args['recursive'] == true;
+  if (!await ctx.files.exists(ctx.absolute)) {
+    throw TsukiroException(TsukiroErrorCode.notFound, '沙箱内不存在该目录');
+  }
+  final entries = await ctx.files.list(ctx.absolute, recursive: recursive);
+  return <String, dynamic>{'entries': entries, 'count': entries.length};
+}
+
+Future<Object?> handleFsWrite(PrimitiveCall call) async {
+  final ctx = _resolveFsPath(call, _fsPathArg(call));
+  final text = call.args['text'] as String?;
+  final encoded = call.args['base64'] as String?;
+  final append = call.args['append'] == true;
+
+  if (text == null && encoded == null) {
+    throw TsukiroException(TsukiroErrorCode.invalidArgs, '需要 text 或 base64');
+  }
+  if (encoded != null) {
+    final bytes = base64Decode(encoded);
+    await ctx.files.writeBytes(ctx.absolute, bytes, append: append);
+    return <String, dynamic>{'bytes': bytes.length};
+  }
+  await ctx.files.writeText(ctx.absolute, text!, append: append);
+  return <String, dynamic>{'bytes': utf8.encode(text).length};
+}
+
+Future<Object?> handleFsMeta(PrimitiveCall call) async {
+  final ctx = _resolveFsPath(call, _fsPathArg(call));
+  if (!await ctx.files.exists(ctx.absolute)) {
+    throw TsukiroException(TsukiroErrorCode.notFound, '沙箱内不存在该文件');
+  }
+  return <String, dynamic>{
+    'exists': true,
+    'size': await ctx.files.size(ctx.absolute),
+  };
+}
+
+Future<Object?> handleFsDelete(PrimitiveCall call) async {
+  final ctx = _resolveFsPath(call, _fsPathArg(call));
+  await ctx.files.delete(ctx.absolute, recursive: call.args['recursive'] == true);
+  return <String, dynamic>{'deleted': true};
+}
+
+Future<Object?> handleFsMkdir(PrimitiveCall call) async {
+  // 建目录 = 写一个占位文件再删掉。
+  //
+  // 听着脏，但 `HostFiles` 里没有 mkdir，而为它扩接口会让
+  // "宿主必须实现的东西"变多（Web/桌面端也得跟着改）。
+  // 占位文件用完就删，不留在目录里。
+  final ctx = _resolveFsPath(call, '${_fsPathArg(call)}/.tsukiro_keep');
+  await ctx.files.writeText(ctx.absolute, '');
+  await ctx.files.delete(ctx.absolute);
+  return <String, dynamic>{'created': true};
 }
 
 // ─────────────────────────── ui.toast ───────────────────────────

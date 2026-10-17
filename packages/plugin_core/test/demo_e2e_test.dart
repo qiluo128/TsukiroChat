@@ -638,7 +638,7 @@ void main() {
       ]));
 
       expect(rig.registry.length, greaterThan(100));
-      expect(rig.registry.implementedCount, 37,
+      expect(rig.registry.implementedCount, 42,
           reason: '基础原语、自省原语、状态/记忆、Surface，'
               '以及 data.* / ui.window.* / state.* / slot.list / capability.*');
     });
