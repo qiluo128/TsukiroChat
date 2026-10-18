@@ -21,6 +21,13 @@ enum TsukiroErrorCode {
   /// 文件/联系人/会话不存在。
   notFound,
 
+  /// 目标已经存在（文件重名等）。**不是参数错误**，也不可重试 ——
+  /// 重试还是同一个冲突，调用方必须换名字或显式要求覆盖。
+  ///
+  /// 单独一个码是为了让调用方能把"我传错了参数"和"这个文件已经有了"
+  /// 分开处理：前者应该改参数，后者应该问用户或换名字。
+  conflict,
+
   /// 磁盘或系统 IO 失败。
   ioError,
 
@@ -66,6 +73,8 @@ String errorCodeToString(TsukiroErrorCode code) {
       return 'PERMISSION_REVOKED';
     case TsukiroErrorCode.userCancelled:
       return 'USER_CANCELLED';
+    case TsukiroErrorCode.conflict:
+      return 'CONFLICT';
     case TsukiroErrorCode.notFound:
       return 'NOT_FOUND';
     case TsukiroErrorCode.ioError:

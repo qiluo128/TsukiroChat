@@ -370,7 +370,7 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '已移动到 ' + (target.isEmpty ? '根目录' : target),
+            '已移动到 ${target.isEmpty ? '根目录' : target}',
           ),
         ),
       );
@@ -415,7 +415,7 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('打开失败：' + e.toString())));
+          .showSnackBar(SnackBar(content: Text('打开失败：$e')));
     }
   }
   Future<void> _share(String name) async {

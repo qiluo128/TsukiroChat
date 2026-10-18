@@ -206,7 +206,10 @@ case 'create_folder':
         final existed = await store.exists(agentId, path);
         if (!overwrite && existed) {
           throw TsukiroException(
-            TsukiroErrorCode.invalidArgs,
+            // **CONFLICT 而不是 INVALID_ARGS。**
+            // 参数本身没问题（path/text 都对），是目标已经存在 ——
+            // 把它们混成一个码，调用方就没法区分"我传错"和"文件已有"。
+            TsukiroErrorCode.conflict,
             '工作区里已经有「$path」了。要修改它请传 overwrite: true，'
             '否则换一个文件名。',
             details: <String, dynamic>{'path': path, 'exists': true},
