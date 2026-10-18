@@ -11,6 +11,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:share_plus/share_plus.dart';
+
 import '../services/workspace_store.dart';
 import '../theme/app_theme.dart';
 import '../theme/design_tokens.dart';
@@ -231,6 +233,14 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
                 title: const Text('编辑'),
                 onTap: () => Navigator.pop(ctx, 'edit'),
               ),
+            if (!isDir)
+              ListTile(
+                leading: const Icon(Icons.share_outlined, size: 20),
+                title: const Text('分享'),
+                subtitle: const Text('发到微信 / 邮件 / 其他应用',
+                    style: TextStyle(fontSize: 11.5)),
+                onTap: () => Navigator.pop(ctx, 'share'),
+              ),
             ListTile(
               leading: const Icon(Icons.drive_file_rename_outline, size: 20),
               title: const Text('重命名'),
@@ -255,6 +265,8 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     switch (action) {
       case 'edit':
         await _openFile(name);
+      case 'share':
+        await _share(name);
       case 'rename':
         await _rename(name);
       case 'move':
@@ -325,6 +337,34 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('移动失败：$e')));
+    }
+  }
+
+/// 分享一个文件到系统分享面板。
+  ///
+  /// 用 share_plus 而不是自己做 Intent：应用私有目录的文件要发给别的
+  /// 应用，必须过一个 FileProvider，而且各家的 provider authority 不同。
+  /// 自己拼 Intent 会在部分厂商 ROM 上直接崩。
+  Future<void> _share(String name) async {
+    try {
+      final store = await _getStore();
+      final absolute = store.resolve(widget.agentId, _rel(name));
+      if (!mounted) return;
+      // sharePositionOrigin 在 iPad 上是必需的（否则崩），
+      // 在 Android 上被忽略 —— 顺手给上没坏处。
+      final box = context.findRenderObject() as RenderBox?;
+      final origin = box == null
+          ? null
+          : box.localToGlobal(Offset.zero) & box.size;
+      await Share.shareXFiles(
+        <XFile>[XFile(absolute)],
+        subject: name,
+        sharePositionOrigin: origin,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('分享失败：$e')));
     }
   }
 
