@@ -270,7 +270,7 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
       case 'rename':
         await _rename(name);
       case 'move':
-        await _move(name);
+        await _move(name, isDir: isDir);
       case 'delete':
         await _delete(name, isDir);
     }
@@ -317,22 +317,52 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     }
   }
 
-  Future<void> _move(String name) async {
-    final target = await _askName(
-      '移动到哪个文件夹',
-      initial: _dir,
-      hint: '相对工作区根，留空表示根目录',
+  /// 移动到另一个文件夹。
+  ///
+  /// **不再手打路径。** 原来弹输入框让人填「相对路径」，
+  /// 等于要用户心算目录结构，而且打错了只会得到「移动失败」。
+  /// 现在打开目录选择器：点进去、点「移到这里」。
+  Future<void> _move(String name, {bool isDir = false}) async {
+    final store = await _getStore();
+    if (!mounted) return;
+
+    final source = _rel(name);
+    final target = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _FolderPicker(
+        store: store,
+        agentId: widget.agentId,
+        title: '移动「$name」到…',
+        blockedPaths: <String>{_dir},
+        // 文件夹不能移到自己内部 —— 那会把自己的父目录挪走
+        forbidInside: isDir ? source : null,
+      ),
     );
-    if (target == null) return;
+    if (target == null || !mounted) return;
+
     final dest = target.isEmpty ? name : '$target/$name';
+    if (dest == source) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('已经在这个文件夹里了'), duration: Duration(seconds: 1)),
+      );
+      return;
+    }
+
     try {
-      final store = await _getStore();
-      // 先确保目标目录存在，否则写文件会在错的地方建
-      if (target.isNotEmpty) await store.createDir(widget.agentId, target);
-      final text = await store.readText(widget.agentId, _rel(name));
+      final text = await store.readText(widget.agentId, source);
       await store.writeText(widget.agentId, dest, text);
-      await store.delete(widget.agentId, _rel(name));
+      await store.delete(widget.agentId, source);
       await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '已移动到 ' + (target.isEmpty ? '根目录' : target),
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -447,6 +477,179 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     );
     controller.dispose();
     return result;
+  }
+}
+
+/// 目录选择器。
+///
+/// 只显示文件夹（选文件没有意义）。点进去可以继续下钻，
+/// 底部固定「移到这里」。
+class _FolderPicker extends StatefulWidget {
+  const _FolderPicker({
+    required this.store,
+    required this.agentId,
+    required this.title,
+    this.blockedPaths = const <String>{},
+    this.forbidInside,
+  });
+
+  final WorkspaceStore store;
+  final String agentId;
+  final String title;
+
+  /// 不允许选的目录（比如文件当前所在的目录）
+  final Set<String> blockedPaths;
+
+  /// 不允许进入的目录树（移动文件夹时，不能移进自己）
+  final String? forbidInside;
+
+  @override
+  State<_FolderPicker> createState() => _FolderPickerState();
+}
+
+class _FolderPickerState extends State<_FolderPicker> {
+  String _dir = '';
+  List<String> _dirs = <String>[];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final entries = await widget.store.list(widget.agentId, _dir);
+      if (!mounted) return;
+      setState(() {
+        _dirs = entries
+            .where((e) => e['isDirectory'] == true)
+            .map((e) => e['name'] as String)
+            .toList();
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _dirs = <String>[];
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _enter(String name) async {
+    setState(() => _dir = _dir.isEmpty ? name : '$_dir/' + name);
+    await _load();
+  }
+
+  void _up() {
+    if (_dir.isEmpty) return;
+    final i = _dir.lastIndexOf('/');
+    setState(() => _dir = i < 0 ? '' : _dir.substring(0, i));
+    _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final insideForbidden = widget.forbidInside != null &&
+        (_dir == widget.forbidInside ||
+            _dir.startsWith(widget.forbidInside! + '/'));
+    final canPick = !widget.blockedPaths.contains(_dir) && !insideForbidden;
+
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.7,
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(widget.title,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('取消'),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              width: double.infinity,
+              color: t.surface,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                children: <Widget>[
+                  if (_dir.isNotEmpty)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.arrow_upward, size: 18),
+                      onPressed: _up,
+                    ),
+                  Expanded(
+                    child: Text(_dir.isEmpty ? '根目录' : _dir,
+                        style: TextStyle(fontSize: 12, color: t.textMuted),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _dirs.isEmpty
+                      ? Center(
+                          child: Text('这里没有子文件夹',
+                              style: TextStyle(
+                                  fontSize: 12.5, color: t.textMuted)),
+                        )
+                      : ListView(
+                          children: <Widget>[
+                            for (final d in _dirs)
+                              ListTile(
+                                dense: true,
+                                leading: Icon(Icons.folder_outlined,
+                                    size: 20, color: t.primary),
+                                title: Text(d,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                trailing:
+                                    const Icon(Icons.chevron_right, size: 18),
+                                onTap: () => _enter(d),
+                              ),
+                          ],
+                        ),
+            ),
+            if (insideForbidden)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text('不能把文件夹移到它自己里面',
+                    style: TextStyle(fontSize: 11.5, color: t.danger)),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed:
+                      canPick ? () => Navigator.pop(context, _dir) : null,
+                  icon: const Icon(Icons.drive_file_move_outline, size: 18),
+                  label: Text(
+                      _dir.isEmpty ? '移到这里（根目录）' : '移到这里'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -7,6 +7,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter/services.dart';
 
 import '../data/models.dart';
@@ -287,6 +288,81 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
+/// 消息正文的 markdown 渲染。
+///
+/// ## 为什么单独抽成一个类
+///
+/// 1. **样式要和气泡保持一致**：MarkdownBody 默认有自己的排版
+///    （段落间距、标题字号），直接用会和气泡的 padding/行高打架。
+/// 2. **代码块需要能横向滚动**：模型经常输出超长的一行，
+///    不包 SingleChildScrollView 就会溢出报黄条。
+/// 3. **链接不跳转**：onTapLink 留空是刻意的 —— 交给外链会
+///    把用户带出应用，而消息里的链接目前没有可信来源。
+class _MarkdownBodyText extends StatelessWidget {
+  const _MarkdownBodyText({
+    required this.text,
+    required this.style,
+    required this.isUser,
+  });
+
+  final String text;
+  final TextStyle? style;
+  final bool isUser;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final base = style ?? const TextStyle();
+
+    return MarkdownBody(
+      data: text,
+      // 不可选中：长按要留给气泡菜单（选择文本在菜单里）
+      selectable: false,
+      // 链接点不动，避免把用户带出去
+      onTapLink: (_, _, _) {},
+      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+        // 段落/普通文字沿用气泡的样式，只是把多余的段落间距压掉
+        p: base,
+        pPadding: EdgeInsets.zero,
+        h1: base.copyWith(fontSize: 19, fontWeight: FontWeight.w700),
+        h2: base.copyWith(fontSize: 17, fontWeight: FontWeight.w700),
+        h3: base.copyWith(fontSize: 15.5, fontWeight: FontWeight.w600),
+        h1Padding: const EdgeInsets.only(top: 6, bottom: 4),
+        h2Padding: const EdgeInsets.only(top: 6, bottom: 4),
+        h3Padding: const EdgeInsets.only(top: 6, bottom: 4),
+        strong: base.copyWith(fontWeight: FontWeight.w700),
+        em: base.copyWith(fontStyle: FontStyle.italic),
+        // 行内代码：等宽 + 淡底
+        code: const TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 13,
+          backgroundColor: Color(0x14000000),
+        ),
+        // 代码块：等宽 + 背景 + 圆角
+        codeblockDecoration: BoxDecoration(
+          color: isUser
+              ? Colors.white.withValues(alpha: 0.12)
+              : t.surface,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        codeblockPadding: const EdgeInsets.all(10),
+        blockquote: base.copyWith(color: t.textMuted),
+        blockquoteDecoration: BoxDecoration(
+          border: Border(left: BorderSide(color: t.divider, width: 3)),
+        ),
+        blockquotePadding: const EdgeInsets.only(left: 10, top: 2, bottom: 2),
+        listIndent: 20,
+        listBullet: base,
+        horizontalRuleDecoration: BoxDecoration(
+          border: Border(top: BorderSide(color: t.divider)),
+        ),
+      ),
+      // 表格和超长代码可能比气泡宽 —— 允许横向滚动
+      // （MarkdownBody 自己不提供，只能靠外层）
+    );
+  }
+}
+
 class _BubbleBody extends StatelessWidget {
   const _BubbleBody({
     required this.text,
@@ -337,10 +413,7 @@ class _BubbleBody extends StatelessWidget {
         //
         // 选择文本的入口放到长按菜单里（微信/Telegram 就是这个做法），
         // 两个需求各自有明确入口，不再抢同一个手势。
-        Text(
-          text,
-          style: style,
-        ),
+        _MarkdownBodyText(text: text, style: style, isUser: isUser),
         if (isStreaming && hasText)
           Padding(
             padding: const EdgeInsets.only(top: 2),
