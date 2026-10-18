@@ -18,6 +18,8 @@
 /// 把 agentId 传进来，避免"上一个会话的文件操作落到下一个会话"。
 library;
 
+import 'dart:convert';
+
 import 'package:plugin_core/plugin_core.dart';
 
 import 'workspace_store.dart';
@@ -196,7 +198,13 @@ case 'create_folder':
             rawOverwrite == 1 ||
             rawOverwrite == 'true' ||
             rawOverwrite == '1';
-        if (!overwrite && await store.exists(agentId, path)) {
+
+        // **先记下原来在不在。**
+        //
+        // 之前无条件返回 created: true —— 覆盖已有文件也说自己"新建"了，
+        // 前端拿这个标志提示"新建成功"就会骗人。
+        final existed = await store.exists(agentId, path);
+        if (!overwrite && existed) {
           throw TsukiroException(
             TsukiroErrorCode.invalidArgs,
             '工作区里已经有「$path」了。要修改它请传 overwrite: true，'
@@ -205,7 +213,17 @@ case 'create_folder':
           );
         }
         await store.writeText(agentId, path, text);
-        return <String, dynamic>{'path': path, 'bytes': text.length, 'created': true};
+        return <String, dynamic>{
+          'path': path,
+          // **UTF-8 字节数，不是 String.length。**
+          //
+          // Dart 的 String.length 是 UTF-16 码元数：
+          // 一个汉字算 1，但 UTF-8 里是 3 字节。之前报的数对中文
+          // 只有实际的三分之一，跟文件大小对不上。
+          'bytes': utf8.encode(text).length,
+          'created': !existed,
+          'overwritten': existed,
+        };
 
       default:
         throw TsukiroException(

@@ -11,6 +11,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:open_filex/open_filex.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../services/workspace_store.dart';
@@ -241,6 +242,14 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
                     style: TextStyle(fontSize: 11.5)),
                 onTap: () => Navigator.pop(ctx, 'share'),
               ),
+            if (!isDir)
+              ListTile(
+                leading: const Icon(Icons.open_in_new, size: 20),
+                title: const Text('其他应用打开'),
+                subtitle: const Text('用系统里能处理这种文件的应用打开',
+                    style: TextStyle(fontSize: 11.5)),
+                onTap: () => Navigator.pop(ctx, 'open_with'),
+              ),
             ListTile(
               leading: const Icon(Icons.drive_file_rename_outline, size: 20),
               title: const Text('重命名'),
@@ -265,6 +274,8 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
     switch (action) {
       case 'edit':
         await _openFile(name);
+      case 'open_with':
+        await _openWith(name);
       case 'share':
         await _share(name);
       case 'rename':
@@ -375,6 +386,38 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
   /// 用 share_plus 而不是自己做 Intent：应用私有目录的文件要发给别的
   /// 应用，必须过一个 FileProvider，而且各家的 provider authority 不同。
   /// 自己拼 Intent 会在部分厂商 ROM 上直接崩。
+  /// 用系统里能处理这种文件的应用打开。
+  ///
+  /// 和「分享」的区别是语义：
+  ///   分享        = 把这个文件交给别的应用或人（通常有接收方）
+  ///   其他应用打开 = 我不想在应用内看，用编辑器/看图器打开它
+  ///
+  /// 行为上确实重叠（系统面板里也可能选到应用），但用户想"编辑这个
+  /// txt"时会去找「打开」而不是「分享」。
+  Future<void> _openWith(String name) async {
+    try {
+      final store = await _getStore();
+      final absolute = store.resolve(widget.agentId, _rel(name));
+      final result = await OpenFilex.open(absolute);
+      if (result.type == ResultType.done) return;
+      if (!mounted) return;
+      // 失败也要说清楚是哪种失败 —— "打开失败"对谁都没用
+      final reason = switch (result.type) {
+        ResultType.noAppToOpen => '系统里没有能打开这种文件的应用',
+        ResultType.permissionDenied => '系统拒绝了访问这个文件的权限',
+        ResultType.fileNotFound => '文件不存在（可能刚被删除）',
+        _ => result.message,
+      };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(reason),
+        duration: const Duration(seconds: 3),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('打开失败：' + e.toString())));
+    }
+  }
   Future<void> _share(String name) async {
     try {
       final store = await _getStore();
