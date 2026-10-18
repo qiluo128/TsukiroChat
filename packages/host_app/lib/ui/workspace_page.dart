@@ -540,7 +540,7 @@ class _FolderPickerState extends State<_FolderPicker> {
   }
 
   Future<void> _enter(String name) async {
-    setState(() => _dir = _dir.isEmpty ? name : '$_dir/' + name);
+    setState(() => _dir = _dir.isEmpty ? name : '$_dir/$name');
     await _load();
   }
 
@@ -556,7 +556,7 @@ class _FolderPickerState extends State<_FolderPicker> {
     final t = context.tokens;
     final insideForbidden = widget.forbidInside != null &&
         (_dir == widget.forbidInside ||
-            _dir.startsWith(widget.forbidInside! + '/'));
+            _dir.startsWith('${widget.forbidInside!}/'));
     final canPick = !widget.blockedPaths.contains(_dir) && !insideForbidden;
 
     return SafeArea(
