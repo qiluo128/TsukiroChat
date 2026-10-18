@@ -98,13 +98,17 @@ class HostTools {
     ),
     _ToolSpec(
       name: 'write_file',
-      description: '在我的工作区里新建一个文本文件。**已存在同名文件会失败**，'
-          '不会覆盖 —— 要改内容请换个文件名，或先删掉旧的。',
+      description: '在我的工作区里写文本文件。默认**不覆盖**已有文件；'
+          '要修改已有文件必须显式传 overwrite: true。',
       parameters: <String, dynamic>{
         'type': 'object',
         'properties': <String, dynamic>{
           'path': <String, dynamic>{'type': 'string', 'description': '相对工作区根的文件路径'},
           'text': <String, dynamic>{'type': 'string', 'description': '文件内容'},
+          'overwrite': <String, dynamic>{
+            'type': 'boolean',
+            'description': '是否允许覆盖已存在的文件。修改已有文件必须设为 true',
+          },
         },
         'required': <String>['path', 'text'],
       },
@@ -184,7 +188,14 @@ case 'create_folder':
         // 所以做成一个显式开关 —— 模型要改已有文件必须传
         // overwrite: true，这个参数会留在工具调用记录里，
         // 事后能查"它是不是有意覆盖的"。
-        final overwrite = args['overwrite'] == true;
+        // **宽容解析。** 模型有时会把布尔值发成字符串或数字 ——
+        // 严格比较 `== true` 会让它"传了还是不生效"，而错误信息又在叫它传，
+        // 于是变成死循环（真实出现过）。
+        final rawOverwrite = args['overwrite'];
+        final overwrite = rawOverwrite == true ||
+            rawOverwrite == 1 ||
+            rawOverwrite == 'true' ||
+            rawOverwrite == '1';
         if (!overwrite && await store.exists(agentId, path)) {
           throw TsukiroException(
             TsukiroErrorCode.invalidArgs,

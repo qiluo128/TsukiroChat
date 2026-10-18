@@ -387,11 +387,23 @@ class ChatController {
 
       // ── 定稿 ──
       final buffer = _ref.read(streamingBufferProvider);
-      final finalText = turn.finalText.isEmpty ? (buffer?.text ?? '') : turn.finalText;
+// **流式累积的正文优先，而不是 turn.finalText。**
+      //
+      // `turn.finalText` 只有**最后一轮**的正文。多轮工具循环里前面几轮
+      // 也可能有正文（思考 → 输出 → 调工具 → 思考 → 输出），
+      // 无条件用 finalText 会把前面的输出全丢掉 ——
+      // 表现就是"只显示最后一段"。
+      //
+      // buffer 是所有轮的 delta 累积，才是完整的那份。
+      // 只有 buffer 为空时（非流式、或流式没回调）才退回 finalText。
+      final buffered = buffer?.text ?? '';
+      final bufferedReasoning = buffer?.reasoning ?? '';
+      final finalText = buffered.trim().isNotEmpty ? buffered : turn.finalText;
       await repos.messages.update(
         assistantId,
         content: finalText,
-        reasoning: turn.reasoning ?? buffer?.reasoning,
+        // 同理：多轮思考也要累积，不能只留最后一段
+        reasoning: bufferedReasoning.trim().isNotEmpty ? bufferedReasoning : turn.reasoning,
         status: MessageStatus.done,
       );
       await repos.conversations.touch(conversationId);
