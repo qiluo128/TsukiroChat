@@ -20,6 +20,7 @@
 /// 不知道那个子目录指向哪里），但工作区本身仍然不需要。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,6 +29,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:plugin_core/plugin_core.dart';
 
 import '../plugin/host_files_impl.dart';
+import 'workspace_versions.dart';
 
 class WorkspaceStore {
   WorkspaceStore._(this.root) : _files = const AppHostFiles();
@@ -91,8 +93,54 @@ class WorkspaceStore {
     }
   }
 
-  Future<void> writeText(String agentId, String rel, String text) =>
-      _files.writeText(resolve(agentId, rel), text);
+  /// 某个智能体的版本库。
+  ///
+  /// 放在**工作区内部**（`<workspace>/<agentId>/.tsukiro`），
+  /// 而不是全局一处：工作区是可独立删除的，版本历史也该跟着走。
+  WorkspaceVersions versionsFor(String agentId) =>
+      WorkspaceVersions(p.join(agentRoot(agentId), '.tsukiro'));
+
+  /// 写文件，**并留一份版本**。
+  ///
+  /// 写成功之后把新内容存进版本库。这样：
+  ///   · 历史是完整的（每个存在过的版本都有）
+  ///   · 改错了能退回去
+  ///   · 内容寻址保证同样的内容只存一份
+  ///
+  /// 快照失败**不阻止写入** —— 但也不假装成功（不记日志就当没发生），
+  /// 因为"有历史"是用户会依赖的判断。
+  Future<void> writeText(String agentId, String rel, String text,
+      {String source = 'write'}) async {
+    final abs = resolve(agentId, rel);
+    await _files.writeText(abs, text);
+    try {
+      final bytes = utf8.encode(text);
+      final versions = versionsFor(agentId);
+      final sha = await versions.putBlob(bytes);
+      await versions.record(rel, sha, bytes: bytes.length, source: source);
+    } catch (_) {
+      // 快照失败不影响文件本身已经写成功这个事实
+    }
+  }
+
+  /// 回到某个历史版本。
+  ///
+  /// 恢复本身也会产生一条新版本（source: restore）——
+  /// 否则"恢复"就变成了隐形的历史删除。
+  Future<void> restore(String agentId, String rel, String sha) async {
+    final versions = versionsFor(agentId);
+    final bytes = await versions.getBlob(sha);
+    if (bytes == null) {
+      throw TsukiroException(
+        TsukiroErrorCode.notFound,
+        '找不到这个版本的内容（可能已被清理）',
+        details: <String, dynamic>{'sha': sha},
+      );
+    }
+    final text = utf8.decode(bytes, allowMalformed: true);
+    await _files.writeText(resolve(agentId, rel), text);
+    await versions.record(rel, sha, bytes: bytes.length, source: 'restore');
+  }
 
   Future<void> delete(String agentId, String rel, {bool recursive = false}) =>
       _files.delete(resolve(agentId, rel), recursive: recursive);

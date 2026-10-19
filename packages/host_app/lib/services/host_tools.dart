@@ -29,6 +29,7 @@ class HostTools {
 
   /// 工具名 → handler 名。目前一一对应。
   static const List<String> names = <String>[
+    'edit_file',
     'list_files',
     'read_file',
     'write_file',
@@ -117,6 +118,25 @@ class HostTools {
       permissions: <String>['fs.write'],
     ),
     _ToolSpec(
+      name: 'edit_file',
+      description: '局部修改工作区里的文本文件：把 old 换成 new。'
+          'old 必须在文件里**只出现一次**（出现多次会让替换位置不确定）。'
+          '比 write_file 好，因为不用重写整个文件，大文件也不会超限。',
+      parameters: <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{
+          'path': <String, dynamic>{'type': 'string', 'description': '相对工作区根的文件路径'},
+          'old': <String, dynamic>{
+            'type': 'string',
+            'description': '要被替换的原文。必须唯一出现',
+          },
+          'new': <String, dynamic>{'type': 'string', 'description': '替换成什么'},
+        },
+        'required': <String>['path', 'old', 'new'],
+      },
+      permissions: <String>['fs.write'],
+    ),
+    _ToolSpec(
       name: 'create_folder',
       description: '在我的工作区里新建一个文件夹。已存在就什么都不做。',
       parameters: <String, dynamic>{
@@ -171,7 +191,42 @@ class HostTools {
           );
         }
 
-case 'create_folder':
+      case 'edit_file':
+        final path = _requirePath(args);
+        final oldText = args['old'] as String?;
+        final newText = args['new'] as String?;
+        if (oldText == null || oldText.isEmpty) {
+          throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 old');
+        }
+        if (newText == null) {
+          throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 new');
+        }
+        final text = await store.readText(agentId, path);
+        final count = oldText.allMatches(text).length;
+        if (count == 0) {
+          throw TsukiroException(
+            TsukiroErrorCode.notFound,
+            '文件里找不到要替换的原文',
+            details: <String, dynamic>{'path': path},
+          );
+        }
+        // 必须唯一：出现多次时替换哪一处是随机的，而 AI 会以为改好了
+        if (count > 1) {
+          throw TsukiroException(
+            TsukiroErrorCode.invalidArgs,
+            '原文在文件里出现了 $count 次，位置不唯一。请给出更多上下文让它只匹配一处。',
+            details: <String, dynamic>{'path': path, 'count': count},
+          );
+        }
+        await store.writeText(
+          agentId,
+          path,
+          text.replaceFirst(oldText, newText),
+          source: 'edit',
+        );
+        return <String, dynamic>{'path': path, 'replaced': 1};
+
+      case 'create_folder':
         final path = _requirePath(args);
         await store.createDir(agentId, path);
         return <String, dynamic>{'path': path, 'created': true};

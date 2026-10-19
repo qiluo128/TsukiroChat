@@ -1,7 +1,7 @@
 name: tsukiro_chat
 description: "Tsukiro Chat 宿主 App"
 publish_to: 'none'
-version: 0.24.2+27
+version: 0.25.0+28
 
 environment:
   sdk: ^3.13.5
@@ -39,6 +39,7 @@ dependencies:
   # 插件代码跑在系统 WebView 里，通过 Bridge 与宿主通信。
   # 用系统 WebView 而不是内嵌 V8/QuickJS：省 3-5 MB 体积，
   # 且系统 WebView 会跟着系统更新（安全补丁）。
+  crypto: ^3.0.0
   flutter_markdown_plus: ^1.0.0
   open_filex: ^4.5.0
   share_plus: ^10.0.0
