@@ -15,6 +15,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../services/workspace_store.dart';
+import '../services/workspace_versions.dart';
 import '../theme/app_theme.dart';
 import '../theme/design_tokens.dart';
 
@@ -242,7 +243,15 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
                     style: TextStyle(fontSize: 11.5)),
                 onTap: () => Navigator.pop(ctx, 'share'),
               ),
-            if (!isDir)
+                        if (!isDir)
+              ListTile(
+                leading: const Icon(Icons.history, size: 20),
+                title: const Text('历史版本'),
+                subtitle: const Text('改错了可以退回去',
+                    style: TextStyle(fontSize: 11.5)),
+                onTap: () => Navigator.pop(ctx, 'history'),
+              ),
+if (!isDir)
               ListTile(
                 leading: const Icon(Icons.open_in_new, size: 20),
                 title: const Text('其他应用打开'),
@@ -276,6 +285,8 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
         await _openFile(name);
       case 'open_with':
         await _openWith(name);
+      case 'history':
+        await _showHistory(name);
       case 'share':
         await _share(name);
       case 'rename':
@@ -386,6 +397,149 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
   /// 用 share_plus 而不是自己做 Intent：应用私有目录的文件要发给别的
   /// 应用，必须过一个 FileProvider，而且各家的 provider authority 不同。
   /// 自己拼 Intent 会在部分厂商 ROM 上直接崩。
+  /// 看这个文件的历史版本，并可以回滚。
+  ///
+  /// 每次写文件都会留一份快照（内容寻址，同样的内容只存一份）。
+  /// 这个入口是「改错了能退回去」真正可用的地方 ——
+  /// 服务层有了但没入口，等于没有。
+  Future<void> _showHistory(String name) async {
+    final store = await _getStore();
+    final rel = _rel(name);
+    List<VersionEntry> entries;
+    try {
+      entries = await store.versionsFor(widget.agentId).history(rel);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('读不到历史：$e')));
+      return;
+    }
+    if (!mounted) return;
+
+    final picked = await showModalBottomSheet<VersionEntry>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final t2 = ctx.tokens;
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(ctx).size.height * 0.6,
+            child: Column(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          '「$name」的历史',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('关闭'),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: entries.isEmpty
+                      ? Center(
+                          child: Text(
+                            '还没有历史（这个文件还没被改过）',
+                            style: TextStyle(
+                                fontSize: 12.5, color: t2.textMuted),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: entries.length,
+                          separatorBuilder: (_, _) => Divider(
+                              height: 1,
+                              color: t2.divider.withValues(alpha: 0.5)),
+                          itemBuilder: (_, i) {
+                            final e = entries[i];
+                            final isLatest = i == 0;
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(
+                                isLatest
+                                    ? Icons.check_circle_outline
+                                    : Icons.history,
+                                size: 20,
+                                color:
+                                    isLatest ? t2.primary : t2.textMuted,
+                              ),
+                              title: Text(
+                                _fmtTime(e.at) + (isLatest ? '（当前）' : ''),
+                              ),
+                              subtitle: Text(
+                                '${e.source} · ${formatBytes(e.bytes)}',
+                                style: TextStyle(
+                                    fontSize: 11.5, color: t2.textMuted),
+                              ),
+                              trailing: isLatest
+                                  ? null
+                                  : const Icon(Icons.restore, size: 18),
+                              onTap: isLatest
+                                  ? null
+                                  : () => Navigator.pop(ctx, e),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (picked == null || !mounted) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('回到这个版本？'),
+        content: Text(
+          '「$name」会被替换成 ${_fmtTime(picked.at)} 的内容。\n\n'
+          '当前内容也会留一份历史，所以这次操作本身也能撤销。',
+        ),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('恢复')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    try {
+      await store.restore(widget.agentId, rel, picked.sha);
+      await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已恢复到该版本')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('恢复失败：$e')));
+    }
+  }
+
+  String _fmtTime(DateTime at) {
+    final l = at.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${l.year}-${two(l.month)}-${two(l.day)} '
+        '${two(l.hour)}:${two(l.minute)}:${two(l.second)}';
+  }
+
   /// 用系统里能处理这种文件的应用打开。
   ///
   /// 和「分享」的区别是语义：

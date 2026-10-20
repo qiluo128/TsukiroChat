@@ -34,6 +34,10 @@ import 'workspace_versions.dart';
 class WorkspaceStore {
   WorkspaceStore._(this.root) : _files = const AppHostFiles();
 
+  /// 写入计数器。每 200 次裁剪一次索引 ——
+  /// 每次写都读一遍索引是 O(n)，5000 行会明显拖慢保存。
+  static int _writeCounter = 0;
+
   /// `<app>/workspaces`
   final String root;
   final AppHostFiles _files;
@@ -118,6 +122,8 @@ class WorkspaceStore {
       final versions = versionsFor(agentId);
       final sha = await versions.putBlob(bytes);
       await versions.record(rel, sha, bytes: bytes.length, source: source);
+      // 每 200 次写裁剪一次索引，避免无界增长
+      if (++_writeCounter % 200 == 0) await versions.pruneIndex();
     } catch (_) {
       // 快照失败不影响文件本身已经写成功这个事实
     }
