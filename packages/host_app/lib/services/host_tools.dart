@@ -29,6 +29,8 @@ class HostTools {
 
   /// 工具名 → handler 名。目前一一对应。
   static const List<String> names = <String>[
+'list_versions',
+    'restore_version',
     'edit_file',
     'list_files',
     'read_file',
@@ -151,6 +153,33 @@ class HostTools {
       },
       permissions: <String>['fs.write'],
     ),
+_ToolSpec(
+      name: 'list_versions',
+      description: '看我工作区里某个文件的历史版本（新的在前）。'
+          '每条带 sha，可以用 restore_version 回到那一版。',
+      parameters: <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{
+          'path': <String, dynamic>{'type': 'string', 'description': '相对工作区根的文件路径'},
+        },
+        'required': <String>['path'],
+      },
+      permissions: <String>['fs.read'],
+    ),
+    _ToolSpec(
+      name: 'restore_version',
+      description: '把文件回到某个历史版本。**这会覆盖当前内容**，'
+          '但当前内容也会留一份历史，所以这次恢复本身还能撤销。',
+      parameters: <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{
+          'path': <String, dynamic>{'type': 'string', 'description': '相对工作区根的文件路径'},
+          'sha': <String, dynamic>{'type': 'string', 'description': 'list_versions 给出的 sha'},
+        },
+        'required': <String>['path', 'sha'],
+      },
+      permissions: <String>['fs.write'],
+    ),
   ];
 
   /// 执行一个宿主工具，返回给模型看的结果。
@@ -225,6 +254,37 @@ class HostTools {
           source: 'edit',
         );
         return <String, dynamic>{'path': path, 'replaced': 1};
+
+case 'list_versions':
+        final path = _requirePath(args);
+        final versions = store.versionsFor(agentId);
+        final entries = await versions.history(path);
+        return <String, dynamic>{
+          'path': path,
+          'count': entries.length,
+          'versions': entries
+              .map((e) => <String, dynamic>{
+                    'sha': e.sha,
+                    'at': e.at.toIso8601String(),
+                    'bytes': e.bytes,
+                    'source': e.source,
+                  })
+              .toList(growable: false),
+        };
+
+      case 'restore_version':
+        final path = _requirePath(args);
+        final sha = args['sha'] as String?;
+        if (sha == null || sha.isEmpty) {
+          throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 sha');
+        }
+        await store.restore(agentId, path, sha);
+        return <String, dynamic>{
+          'path': path,
+          'restored': sha,
+          // 明确告诉模型：这次恢复也进了历史，所以它还能再退回来
+          'note': '恢复本身也记了一条历史，如果退错了可以再退回去',
+        };
 
       case 'create_folder':
         final path = _requirePath(args);
