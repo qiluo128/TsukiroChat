@@ -398,12 +398,24 @@ class ChatController {
       // 只有 buffer 为空时（非流式、或流式没回调）才退回 finalText。
       final buffered = buffer?.text ?? '';
       final bufferedReasoning = buffer?.reasoning ?? '';
-      final finalText = buffered.trim().isNotEmpty ? buffered : turn.finalText;
+      // **合并两份，而不是二选一。**
+      //
+      // 这两份各自可能不完整，而且是**不同方向**的不完整：
+      //   · buffered       = onDelta 累积的，但多轮时只有某些轮走流式
+      //   · turn.finalText = 循环最终认定的正文，但只有最后一轮
+      //
+      // 之前先无条件用 finalText（用户报"只显示最后一段"），
+      // 后来改成无条件用 buffered（变成"只显示第一段"）——
+      // 两次都是二选一，而这两份都不全。
+      //
+      // 所以按包含关系合并：一方包含另一方就用长的那份（避免重复），
+      // 互不包含就都保留（宁可多一段，不可少一段）。
+      final finalText = _mergeText(buffered, turn.finalText);
       await repos.messages.update(
         assistantId,
         content: finalText,
         // 同理：多轮思考也要累积，不能只留最后一段
-        reasoning: bufferedReasoning.trim().isNotEmpty ? bufferedReasoning : turn.reasoning,
+        reasoning: _mergeText(bufferedReasoning, turn.reasoning),
         status: MessageStatus.done,
       );
       await repos.conversations.touch(conversationId);
@@ -438,6 +450,20 @@ class ChatController {
   ///
   /// 出错 / 被取消时**保留已经收到的部分** —— 用户看到半句话，
   /// 比看到一片空白更能理解发生了什么。
+/// 合并两段可能互相包含的文本。
+  ///
+  /// 用于「流式累积」和「最终正文」这两个来源 —— 它们各自可能不完整，
+  /// 而**丢内容比多内容严重得多**（用户看不出来少了什么）。
+  static String _mergeText(String buffered, String? finalText) {
+    final b = buffered.trim();
+    final f = (finalText ?? '').trim();
+    if (b.isEmpty) return f;
+    if (f.isEmpty) return b;
+    if (b.contains(f)) return b;
+    if (f.contains(b)) return f;
+    return '$b\n\n$f';
+  }
+
   Future<void> _finalize(
     Repos repos,
     String messageId,
