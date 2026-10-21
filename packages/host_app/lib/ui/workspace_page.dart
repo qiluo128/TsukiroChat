@@ -96,6 +96,11 @@ class _WorkspacePageState extends ConsumerState<WorkspacePage> {
         title: Text('${widget.agentName} 的工作区'),
         actions: <Widget>[
           IconButton(
+            tooltip: '最近改动',
+            icon: const Icon(Icons.history),
+            onPressed: _showAllHistory,
+          ),
+          IconButton(
             tooltip: '新建文件夹',
             icon: const Icon(Icons.create_new_folder_outlined),
             onPressed: _newFolder,
@@ -397,6 +402,130 @@ if (!isDir)
   /// 用 share_plus 而不是自己做 Intent：应用私有目录的文件要发给别的
   /// 应用，必须过一个 FileProvider，而且各家的 provider authority 不同。
   /// 自己拼 Intent 会在部分厂商 ROM 上直接崩。
+  /// 全部文件的历史（跨文件的时间线）。
+  ///
+  /// 和「按文件看历史」不同，这个回答的是另一个问题：
+  /// **AI 刚才动了什么？**
+  ///
+  /// 用户发现文件不对时，往往不知道是哪个文件、什么时候变的。
+  /// 单个文件的历史帮不上这个忙 —— 需要一条跨文件的时间线。
+  Future<void> _showAllHistory() async {
+    final store = await _getStore();
+    List<VersionEntry> entries;
+    try {
+      entries = await store.versionsFor(widget.agentId).allHistory();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('读不到历史：$e')));
+      return;
+    }
+    if (!mounted) return;
+
+    final picked = await showModalBottomSheet<VersionEntry>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final t2 = ctx.tokens;
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(ctx).size.height * 0.75,
+            child: Column(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                  child: Row(
+                    children: <Widget>[
+                      const Expanded(
+                        child: Text('最近改动',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('关闭'),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: entries.isEmpty
+                      ? Center(
+                          child: Text(
+                            '还没有任何历史\n（文件被改过之后才会出现在这里）',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 12.5, color: t2.textMuted),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: entries.length,
+                          separatorBuilder: (_, _) => Divider(
+                              height: 1,
+                              color: t2.divider.withValues(alpha: 0.5)),
+                          itemBuilder: (_, i) {
+                            final e = entries[i];
+                            return ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.history, size: 20),
+                              title: Text(
+                                e.path,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                '${_fmtTime(e.at)} · ${e.source} · '
+                                '${formatBytes(e.bytes)}',
+                                style: TextStyle(
+                                    fontSize: 11.5, color: t2.textMuted),
+                              ),
+                              onTap: () => Navigator.pop(ctx, e),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (picked == null || !mounted) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('回到这个版本？'),
+        content: Text(
+          '「${picked.path}」会被替换成 ${_fmtTime(picked.at)} 的内容。\n\n'
+          '当前内容也会留一份历史，所以这次操作本身也能撤销。',
+        ),
+        actions: <Widget>[
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('恢复')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    try {
+      await store.restore(widget.agentId, picked.path, picked.sha);
+      await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已恢复 ${picked.path}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('恢复失败：$e')));
+    }
+  }
+
   /// 看这个文件的历史版本，并可以回滚。
   ///
   /// 每次写文件都会留一份快照（内容寻址，同样的内容只存一份）。
