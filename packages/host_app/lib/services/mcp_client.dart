@@ -20,6 +20,45 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+/// 把可能出现在文本里的密钥擦掉。
+///
+/// **这不是"美化错误"。** 我们的原则是错误原文照显示 ——
+/// 但原文里可能回显了鉴权头或 token。
+///
+/// **不美化 ≠ 泄漏。** 这两件事必须同时成立。
+///
+/// 实现上用 replaceAllMapped 而不是 replaceAll：后者的替换串是
+/// **字面量**，不认分组引用（我第一版就这么写错了，输出里留下字面 $1）。
+String redactSecrets(String text) {
+  var out = text;
+
+  // Bearer <token>
+  out = out.replaceAllMapped(
+    RegExp(r'(Bearer\s+)[A-Za-z0-9\-._~+/]{6,}=*'),
+    (m) => m[1]! + '***',
+  );
+
+  // sk-xxxx（我们的模型 key 长这样），保留前 4 位以便辨认是哪个 key
+  out = out.replaceAllMapped(
+    RegExp(r'(sk-[A-Za-z0-9]{4})[A-Za-z0-9\-_]*'),
+    (m) => m[1]! + '***',
+  );
+
+  // Authorization: xxx / "authorization":"xxx"
+  out = out.replaceAllMapped(
+    RegExp(r'([Aa]uthorization["\s:=]+)[^"\s,}]{6,}'),
+    (m) => m[1]! + '***',
+  );
+
+  // token=xxx / "api_key": "xxx" / secret: xxx（允许出现在行首）
+  out = out.replaceAllMapped(
+    RegExp(
+        r'(^|["\s,])((?:token|api_?key|secret|password)["\s:=]+)[A-Za-z0-9\-._~+/]{8,}'),
+    (m) => m[1]! + m[2]! + '***',
+  );
+
+  return out;
+}
 class McpTool {
   const McpTool({
     required this.name,
@@ -70,7 +109,7 @@ class McpCallResult {
 }
 
 class McpException implements Exception {
-  McpException(this.message, {this.code});
+  McpException(String message, {this.code}) : message = redactSecrets(message);
 
   final String message;
   final int? code;
@@ -277,7 +316,9 @@ class McpClient {
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
       // 把响应体也带上 —— 有些 server 用 body 说明为什么失败
-      final brief = text.length > 300 ? '${text.substring(0, 300)}…' : text;
+      // **脱敏之后才进错误信息。** 响应体可能回显了请求头。
+      final safe = redactSecrets(text);
+      final brief = safe.length > 300 ? '${safe.substring(0, 300)}…' : safe;
       throw McpException(
         'MCP server 返回 HTTP ${res.statusCode}${brief.isEmpty ? '' : '：$brief'}',
         code: res.statusCode,

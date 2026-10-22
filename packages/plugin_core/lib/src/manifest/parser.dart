@@ -509,6 +509,57 @@ ConfigSpec? _parseConfig(Object? raw, List<ManifestIssue> errors) {
   return ConfigSpec(schema: schema, section: section);
 }
 
+/// 解析 `provides.mcp`。
+///
+/// 和 config 的**交叉校验**在这里做：`tokenConfigKey` 必须指向一个
+/// 真的声明过的配置项。写错了安装时就报 —— 而不是等用户填了 token
+/// 之后连不上，还以为是 token 本身有问题。
+McpDeclaration? _parseMcp(
+  Object? raw,
+  List<ManifestIssue> errors,
+  List<ConfigField> configFields,
+) {
+  if (raw == null) return null;
+  if (raw is! Map<String, dynamic>) {
+    errors.add(const ManifestIssue('provides.mcp', '必须是对象'));
+    return null;
+  }
+
+  final url = (raw['url'] as String?)?.trim() ?? '';
+  if (url.isEmpty) {
+    errors.add(const ManifestIssue('provides.mcp.url', '不能为空'));
+    return null;
+  }
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    errors.add(const ManifestIssue('provides.mcp.url', '必须是 http/https 地址'));
+    return null;
+  }
+
+  final tokenKey = (raw['tokenConfigKey'] as String?)?.trim();
+  if (tokenKey != null && tokenKey.isNotEmpty) {
+    final declared = configFields.any((f) => f.key == tokenKey);
+    if (!declared) {
+      // **安装时就挡住。** 这是这个校验存在的全部意义。
+      errors.add(ManifestIssue(
+        'provides.mcp.tokenConfigKey',
+        '引用了未声明的配置项「$tokenKey」，请在 provides.config 里声明它',
+      ));
+      return null;
+    }
+  }
+
+  return McpDeclaration(
+    url: url,
+    name: (raw['name'] as String?)?.trim() ?? '',
+    authHeader: (raw['authHeader'] as String?)?.trim().isNotEmpty == true
+        ? (raw['authHeader'] as String).trim()
+        : 'Authorization',
+    authPrefix: raw['authPrefix'] as String? ?? 'Bearer ',
+    tokenConfigKey:
+        (tokenKey == null || tokenKey.isEmpty) ? null : tokenKey,
+  );
+}
+
 ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
   if (raw == null) return const ProvidesSpec();
   if (raw is! Map<String, dynamic>) {
@@ -524,6 +575,8 @@ ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
   final themes = _parseThemes(raw['theme'] ?? raw['themes'], errors);
   // 插件声明的配置项。宿主据此画设置界面（没声明就不显示配置入口）。
   final configFields = _parseConfigFields(raw['config'], errors);
+  // MCP 要在 config 之后解析 —— 它要拿 configFields 做交叉校验。
+  final mcp = _parseMcp(raw['mcp'], errors, configFields);
   final reserved = <String, dynamic>{};
 
   // 预留段：**只解析不执行**。字段一次留全，这样插件今天写的 manifest
@@ -532,7 +585,6 @@ ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
     'overlays',
     'skills',
     'personas',
-    'mcp',
     'memory',
     'layout', // L2 布局级
     'replaces', // L3 接管级
@@ -557,6 +609,7 @@ ProvidesSpec _parseProvides(Object? raw, List<ManifestIssue> errors) {
     surfaces: surfaces,
     capabilities: capabilities,
     config: configFields,
+    mcp: mcp,
     themes: themes,
     rawReserved: reserved,
   );

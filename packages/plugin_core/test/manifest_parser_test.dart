@@ -563,7 +563,7 @@ void main() {
       expect(r.isValid, isFalse);
     });
 
-    test('预留段（overlays/skills/personas/mcp/memory/layout/replaces/data）原样保留', () {
+    test('预留段（overlays/skills/personas/memory/layout/replaces/data）原样保留', () {
       final m = parseManifest(withProvides(<String, dynamic>{
         'overlays': <dynamic>[
           <String, dynamic>{'id': 'ball', 'entry': 'pages/ball.html'},
@@ -574,7 +574,6 @@ void main() {
         'personas': <dynamic>[
           <String, dynamic>{'id': 'yuki'},
         ],
-        'mcp': <String, dynamic>{'servers': <dynamic>[]},
         'memory': <String, dynamic>{'provider': 'memory/index.js'},
         'layout': <String, dynamic>{'mode': 'compact'},
         'replaces': <String, dynamic>{
@@ -582,8 +581,10 @@ void main() {
         },
         'data': <String, dynamic>{'messages': true},
       })).manifest!;
+      // mcp 不在这里：它已经从预留段升级成真字段（McpDeclaration）。
+      // 这是行为变更，不是回归 —— 所以这条断言要跟着改。
       expect(m.provides.rawReserved.keys, containsAll(<String>[
-        'overlays', 'skills', 'personas', 'mcp', 'memory',
+        'overlays', 'skills', 'personas', 'memory',
         'layout', 'replaces', 'data',
       ]));
       // 预留段虽然不执行，但要有明确的访问器

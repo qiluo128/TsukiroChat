@@ -237,6 +237,58 @@ class PageDeclaration {
 }
 
 /// `provides` 段。
+/// 插件声明的 MCP 连接。
+///
+/// ## 为什么只有这么几个字段
+///
+/// 我一开始设计了 `params` 数组 + `header`/`query`/`path` 三种 target，
+/// 后来砍掉了：**真实见过的 MCP server 只有两种鉴权形态** ——
+/// 免鉴权的（4399 预览端点）和一个 Bearer 头（麦当劳）。
+///
+/// `query` 和 `path` 那两个 target 是我凭想象加的，没有任何实例。
+/// 等真的遇到了再加 —— 那时需求会自己告诉你它长什么样。
+///
+/// ## token 从哪来
+///
+/// 插件作者不知道用户的 token，所以这里只写**引用**：
+/// `tokenConfigKey` 指向 `provides.config` 里的某个 key，
+/// 用户在插件设置页填，宿主在连接时读出来拼成头。
+///
+/// **token 只存在插件配置一处**，不复制进连接。否则改了配置、
+/// 连接里还是旧 token，会变成"我改了怎么没用"。
+class McpDeclaration {
+  const McpDeclaration({
+    required this.url,
+    this.name = '',
+    this.authHeader = 'Authorization',
+    this.authPrefix = 'Bearer ',
+    this.tokenConfigKey,
+  });
+
+  /// 端点。必须是 http/https。
+  final String url;
+
+  /// 显示名。空的话用插件名。
+  final String name;
+
+  /// token 放进哪个请求头。
+  final String authHeader;
+
+  /// 值的前缀。默认 `Bearer `（注意尾随空格是有意的）。
+  final String authPrefix;
+
+  /// 引用 `provides.config` 里的哪个 key 当 token。
+  ///
+  /// null = 这个 server 不需要鉴权。
+  final String? tokenConfigKey;
+
+  /// 拿到用户填的值之后，要发的请求头。空 map = 不发鉴权头。
+  Map<String, String> headersWith(String? token) {
+    if (token == null || token.isEmpty) return const <String, String>{};
+    return <String, String>{authHeader: '$authPrefix$token'};
+  }
+}
+
 class ProvidesSpec {
   const ProvidesSpec({
     this.tools = const <ToolDeclaration>[],
@@ -256,6 +308,12 @@ class ProvidesSpec {
     /// **空列表 = 这个插件没有可配置的东西**，界面不显示配置入口。
     this.config = const <ConfigField>[],
 
+    /// 这个插件要添加的 MCP 连接。
+    ///
+    /// **这就是"插件一键配置 MCP"的落点** —— 装插件即建连接，
+    /// 复用已有的安装流程、权限告知、卸载清理。
+    this.mcp,
+
     this.rawReserved = const <String, dynamic>{},
   });
 
@@ -272,6 +330,9 @@ class ProvidesSpec {
 
   /// 插件声明的配置项。
   final List<ConfigField> config;
+
+  /// 插件声明的 MCP 连接（null = 没有）。
+  final McpDeclaration? mcp;
 
   /// 有没有可配置的东西。界面据此决定要不要显示配置区块。
   bool get hasConfig => config.isNotEmpty;
