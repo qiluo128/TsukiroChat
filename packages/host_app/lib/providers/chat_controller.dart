@@ -14,6 +14,8 @@ import '../data/repositories.dart';
 import '../services/utility_model.dart';
 import '../services/agent_context.dart';
 import '../services/host_tools.dart';
+import '../services/mcp_client.dart';
+import '../services/mcp_connections.dart';
 import '../services/workspace_store.dart';
 import 'app_providers.dart';
 import 'plugin_providers.dart';
@@ -344,6 +346,26 @@ class ChatController {
                 errorCodeToString(e.code), e.message);
             } catch (e) {
               return ToolInvocationResult.failure('HOST_ERROR', '$e');
+            }
+          }
+          // MCP 工具：pluginId 形如 `mcp:<connectionId>`。
+          //
+          // handler 是 MCP 那边的原始工具名（注册时存的就是它）。
+          if (pluginId.startsWith('mcp:')) {
+            try {
+              final svc = await _ref.read(mcpServiceProvider.future);
+              final r = await svc.callTool(
+                pluginId.substring(4),
+                handler,
+                args,
+              );
+              return r.isError
+                  ? ToolInvocationResult.failure('MCP_TOOL_ERROR', r.text)
+                  : ToolInvocationResult.ok(r.text);
+            } on McpException catch (e) {
+              return ToolInvocationResult.failure('MCP_ERROR', e.message);
+            } catch (e) {
+              return ToolInvocationResult.failure('MCP_ERROR', '$e');
             }
           }
           final host = pluginHost;

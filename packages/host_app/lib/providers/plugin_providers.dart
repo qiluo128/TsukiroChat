@@ -9,6 +9,7 @@
 /// 工具表里」「门禁不知道这个插件」这类问题，而且表现为静默失效。
 library;
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
@@ -23,6 +24,7 @@ import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
 import '../plugin/host_files_impl.dart';
 import '../services/host_tools.dart';
+import '../services/mcp_connections.dart';
 import '../plugin/plugin_host.dart';
 import '../plugin/surface_controller.dart';
 import '../plugin/app_keys.dart';
@@ -263,6 +265,9 @@ final FutureProvider<PluginHost> pluginHostProvider = FutureProvider<PluginHost>
   await host.initialize();
 
   // 根目录只有 initialize() 之后才知道，所以在这里补上
+  // **预热 MCP。** 工具必须在第一轮对话前注册进工具表，
+  // 否则模型看不到它们。连接失败不影响启动（失败的那些跳过）。
+  unawaited(ref.read(mcpServiceProvider.future).then((_) {}, onError: (_) {}));
   final sandbox = primitives.services.get<SandboxProvider>();
   if (sandbox is AppSandboxProvider) sandbox.pluginRoot = host.rootDir;
 

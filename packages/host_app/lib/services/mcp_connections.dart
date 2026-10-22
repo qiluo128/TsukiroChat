@@ -22,6 +22,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
+import 'package:plugin_core/plugin_core.dart';
 
 import '../data/repositories.dart';
 import '../providers/app_providers.dart';
@@ -287,6 +288,35 @@ class McpService {
 
   Future<List<McpConnection>> loadConnections() => _store.load();
 }
+
+/// 活跃的 MCP 服务。
+///
+/// 这个 provider 的初始化过程会**把已启用连接的工具有效注册进工具表** ——
+/// 没有它，McpService 永远不会被实例化，工具永远注册不进去，
+/// 整条 MCP 链路就是死代码。
+final FutureProvider<McpService> mcpServiceProvider =
+    FutureProvider<McpService>((ref) async {
+  final store = await ref.watch(mcpStoreProvider.future);
+  final svc = McpService(
+    store: store,
+    tools: ref.watch(toolRegistryProvider),
+    gatekeeper: ref.watch(gatekeeperProvider),
+  );
+  ref.onDispose(svc.dispose);
+
+  // 逐个连接。**单个失败不影响其它** —— 一个 server 挂了
+  // 不该让所有 MCP 工具都不可用。
+  final connections = await store.load();
+  for (final c in connections) {
+    if (!c.enabled) continue;
+    try {
+      await svc.connect(c);
+    } catch (_) {
+      // 连不上就跳过；用户可以在设置页里点「测试连接」看错误原文
+    }
+  }
+  return svc;
+});
 
 /// MCP 存储（依赖仓储）。
 final FutureProvider<McpStore> mcpStoreProvider = FutureProvider<McpStore>((ref) async {

@@ -17,6 +17,9 @@ import '../../theme/app_theme.dart';
 import '../appearance_pickers.dart';
 import '../chat_background.dart';
 import 'model_config_page.dart';
+import 'mcp_settings_page.dart';
+
+import '../../services/mcp_connections.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -45,6 +48,40 @@ class SettingsPage extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right, size: 18),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const ModelConfigPage()),
+            ),
+          ),
+
+          Divider(height: 24, color: t.divider, indent: t.spacing.page.toDouble()),
+
+          const _SectionTitle('高级'),
+          ListTile(
+            leading: const Icon(Icons.hub_outlined),
+            title: const Text('MCP 服务'),
+            subtitle: Consumer(
+              builder: (context, ref, _) {
+                final store = ref.watch(mcpStoreProvider);
+                return store.when(
+                  data: (s) => FutureBuilder<List<McpConnection>>(
+                    future: s.load(),
+                    builder: (context, snap) {
+                      final n = snap.data?.length;
+                      return Text(
+                        n == null
+                            ? '读取中…'
+                            : (n == 0 ? '未配置（接入外部 MCP server）' : '$n 个已配置'),
+                        style: const TextStyle(fontSize: 12.5),
+                      );
+                    },
+                  ),
+                  loading: () => const Text('读取中…', style: TextStyle(fontSize: 12.5)),
+                  error: (e, _) =>
+                      Text('$e', style: const TextStyle(fontSize: 12.5)),
+                );
+              },
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 18),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const McpSettingsPage()),
             ),
           ),
 
