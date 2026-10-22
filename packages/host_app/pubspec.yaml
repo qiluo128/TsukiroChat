@@ -1,7 +1,7 @@
 name: tsukiro_chat
 description: "Tsukiro Chat 宿主 App"
 publish_to: 'none'
-version: 0.29.0+36
+version: 0.29.1+37
 
 environment:
   sdk: ^3.13.5
@@ -79,4 +79,5 @@ flutter:
     - assets/demo_plugins/rock-paper-scissors/
     - assets/demo_plugins/gift-case/handlers/
     - assets/demo_plugins/gift-case/
+    - assets/demo_plugins/mcd-mcp/
     # <<< demo_plugins

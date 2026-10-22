@@ -32,7 +32,21 @@ const DEST = 'packages/host_app/assets/demo_plugins';
 const PUBSPEC = 'packages/host_app/pubspec.yaml';
 
 /** 只同步这些插件（全同步会让 APK 变大，而且不是每个都适合演示）。 */
-const INCLUDE = ['time-plugin', 'translate-button', 'sakura-theme', 'status-panel', 'mini-game', 'rock-paper-scissors', 'gift-case'];
+const INCLUDE = ['time-plugin', 'translate-button', 'sakura-theme', 'status-panel', 'mini-game', 'rock-paper-scissors', 'gift-case', 'mcd-mcp'];
+
+/** 仓库里有但这些没被同步 —— **必须喊出来**，不能静默跳过。 */
+function reportSkipped() {
+  let all;
+  try { all = readdirSync(SRC, { withFileTypes: true }); } catch { return; }
+  const skipped = all
+    .filter((e) => e.isDirectory() && !INCLUDE.includes(e.name))
+    .map((e) => e.name);
+  if (skipped.length === 0) return;
+  console.log('');
+  console.log('  ⚠ 以下插件**没有**被同步（不在 INCLUDE 里）：');
+  for (const s of skipped) console.log(`      · ${s}`);
+  console.log('    要放进 APK 的话，把它加进 INCLUDE。');
+}
 
 const MARK_START = '    # >>> demo_plugins (由 scripts/sync_demo_plugins.mjs 生成，勿手改)';
 const MARK_END = '    # <<< demo_plugins';
@@ -125,3 +139,5 @@ const n = updatePubspec(dirs);
 console.log(`\n共 ${total} 个文件；pubspec 里写了 ${n} 条目录声明。`);
 console.log('\n**注意**：Flutter 的目录 asset 不递归，所以每一层都要列 ——');
 console.log('这就是为什么要自动生成而不是手写。');
+
+reportSkipped();
