@@ -266,13 +266,34 @@ final FutureProvider<PluginHost> pluginHostProvider = FutureProvider<PluginHost>
   await host.initialize();
 
   // 根目录只有 initialize() 之后才知道，所以在这里补上
-  // **MCP：先同步插件声明，再连接已启用的。**
+  final sandbox = primitives.services.get<SandboxProvider>();
+  if (sandbox is AppSandboxProvider) sandbox.pluginRoot = host.rootDir;
+
+  ref.read(surfaceControllerProvider).attachHost(host);
+  await _installDemoPluginsIfFirstRun(ref, host);
+
+  // **MCP：等插件装完之后再做。**
   //
-  // 同步要在连接之前 —— 插件带来的连接是这一步创建的。
-  // 放在这里（而不是 mcpServiceProvider 里）是为了避免循环依赖：
-  // mcpServiceProvider 不能依赖 pluginHostProvider，因为它就是被后者创建的。
+  // 这里修掉两个顺序问题（都是真实出现过的"AI 看不到工具"）：
+  //
+  //   ① 之前这段排在 _installDemoPluginsIfFirstRun **之前** ——
+  //      首次启动时 host.plugins 还是空的，
+  //      插件带来的连接根本不会被创建。
+  //
+  //   ② host.configValue 读的是**内存缓存**，而 refreshConfig 是
+  //      fire-and-forget 起的异步任务。同步时缓存可能还是空的 →
+  //      token 拿不到 → 头是空的 → 服务端 403 → 一个工具都注册不上。
+  //
+  // 所以顺序必须是：await 配置加载 → 同步 → 连接。
   unawaited(() async {
     try {
+      for (final p in host.plugins) {
+        try {
+          await host.refreshConfig(p.id);
+        } catch (_) {
+          // 单个插件配置读不出来不影响其它
+        }
+      }
       final svc = await ref.read(mcpServiceProvider.future);
       await svc.syncFromPlugins(
         host.plugins,
@@ -291,11 +312,6 @@ final FutureProvider<PluginHost> pluginHostProvider = FutureProvider<PluginHost>
       // MCP 起不来不影响应用启动
     }
   }());
-  final sandbox = primitives.services.get<SandboxProvider>();
-  if (sandbox is AppSandboxProvider) sandbox.pluginRoot = host.rootDir;
-
-  ref.read(surfaceControllerProvider).attachHost(host);
-  await _installDemoPluginsIfFirstRun(ref, host);
 
   return host;
 });
