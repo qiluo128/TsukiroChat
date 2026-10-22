@@ -41,9 +41,10 @@ const List<String> demoTemplatePlugins = <String>[
   'assets/demo_plugins/mini-game',
   'assets/demo_plugins/rock-paper-scissors',
   'assets/demo_plugins/gift-case',
+  'assets/demo_plugins/mcd-mcp',
 ];
 
-const int demoTemplateSetVersion = 2;
+const int demoTemplateSetVersion = 3;
 
 /// 原语注册表。
 ///
