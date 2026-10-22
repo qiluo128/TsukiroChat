@@ -265,9 +265,31 @@ final FutureProvider<PluginHost> pluginHostProvider = FutureProvider<PluginHost>
   await host.initialize();
 
   // 根目录只有 initialize() 之后才知道，所以在这里补上
-  // **预热 MCP。** 工具必须在第一轮对话前注册进工具表，
-  // 否则模型看不到它们。连接失败不影响启动（失败的那些跳过）。
-  unawaited(ref.read(mcpServiceProvider.future).then((_) {}, onError: (_) {}));
+  // **MCP：先同步插件声明，再连接已启用的。**
+  //
+  // 同步要在连接之前 —— 插件带来的连接是这一步创建的。
+  // 放在这里（而不是 mcpServiceProvider 里）是为了避免循环依赖：
+  // mcpServiceProvider 不能依赖 pluginHostProvider，因为它就是被后者创建的。
+  unawaited(() async {
+    try {
+      final svc = await ref.read(mcpServiceProvider.future);
+      await svc.syncFromPlugins(
+        host.plugins,
+        (pluginId, key) => host.configValue(pluginId, key)?.toString(),
+      );
+      final conns = await svc.loadConnections();
+      for (final c in conns) {
+        if (!c.enabled) continue;
+        try {
+          await svc.connect(c);
+        } catch (_) {
+          // 单个失败不影响其它；用户可在设置页点「测试连接」看原文
+        }
+      }
+    } catch (_) {
+      // MCP 起不来不影响应用启动
+    }
+  }());
   final sandbox = primitives.services.get<SandboxProvider>();
   if (sandbox is AppSandboxProvider) sandbox.pluginRoot = host.rootDir;
 

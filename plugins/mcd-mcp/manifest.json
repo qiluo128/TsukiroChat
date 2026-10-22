@@ -1,0 +1,32 @@
+{
+  "manifestVersion": 1,
+  "id": "dev.tsukiro.mcd-mcp",
+  "name": "麦当劳 MCP",
+  "version": "1.0.0",
+  "description": "接入麦当劳中国官方 MCP 服务：查活动、领优惠券、查我的券、获取当前时间。装好后在插件设置里填 Token 即可。",
+  "author": "Tsukiro",
+
+  "permissions": [
+    {
+      "name": "net",
+      "reason": "调用麦当劳 MCP 的远程接口"
+    }
+  ],
+
+  "provides": {
+    "config": [
+      {
+        "key": "token",
+        "type": "text",
+        "label": "MCP Token",
+        "description": "用手机号登录 open.mcd.cn/mcp，在控制台激活后获取。过期会返回 401，重新获取后填这里。"
+      }
+    ],
+
+    "mcp": {
+      "url": "https://mcp.mcd.cn",
+      "name": "麦当劳中国 MCP",
+      "tokenConfigKey": "token"
+    }
+  }
+}

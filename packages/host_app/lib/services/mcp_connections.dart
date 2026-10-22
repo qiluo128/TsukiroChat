@@ -25,6 +25,7 @@ import 'package:plugin_core/plugin_core.dart';
 import 'package:plugin_core/plugin_core.dart';
 
 import '../data/repositories.dart';
+import '../plugin/plugin_host.dart';
 import '../providers/app_providers.dart';
 import 'mcp_client.dart';
 
@@ -235,6 +236,77 @@ class McpService {
     final prev = _live.remove(id);
     if (prev == null) return;
     _tools.unregisterPlugin(prev.connection.pluginId);
+  }
+
+  /// 把插件声明的 MCP 连接同步到存储。
+  ///
+  /// 三件事：
+  ///   · 插件有 provides.mcp 但没有对应连接 → 建一条
+  ///   · 插件还在，url 变了 → 更新
+  ///   · 连接还在但插件没了 → 删掉
+  ///
+  /// **token 在同步时从插件的 config 读出来拼进 headers** ——
+  /// 插件作者不知道用户的 token，只在清单里写"引用哪个 config key"。
+  ///
+  /// 复制 token 进连接有个已知的代价：插件配置改了、连接里还是旧的。
+  /// 所以同步必须在**配置变更之后**再跑一次（宿主 revision 变化会触发）。
+  Future<void> syncFromPlugins(
+    List<InstalledPlugin> plugins,
+    String? Function(String pluginId, String key) configValueOf,
+  ) async {
+    final existing = await _store.load();
+    final byId = <String, McpConnection>{for (final c in existing) c.id: c};
+    final wanted = <String>{};
+
+    for (final p in plugins) {
+      final decl = p.manifest.provides.mcp;
+      if (decl == null) continue;
+
+      final id = 'plugin:' + p.id;
+      wanted.add(id);
+
+      String? token;
+      final key = decl.tokenConfigKey;
+      if (key != null) {
+        final raw = configValueOf(p.id, key);
+        token = raw?.toString();
+      }
+
+      final next = McpConnection(
+        id: id,
+        name: decl.name.isEmpty ? p.name : decl.name,
+        url: decl.url,
+        headers: decl.headersWith(token),
+        source: 'plugin:' + p.id,
+        enabled: p.enabled,
+        createdAt: byId[id]?.createdAt ?? DateTime.now(),
+      );
+
+      final prev = byId[id];
+      // 只在真的变了时才写，避免每次启动都重写存储
+      if (prev == null ||
+          prev.url != next.url ||
+          prev.enabled != next.enabled ||
+          prev.name != next.name ||
+          !_sameHeaders(prev.headers, next.headers)) {
+        await _store.upsert(next);
+      }
+    }
+
+    // 插件没了 → 连接也删（只删插件带来的，手动加的不动）
+    for (final c in existing) {
+      if (!c.source.startsWith('plugin:')) continue;
+      if (wanted.contains(c.id)) continue;
+      await _store.remove(c.id);
+    }
+  }
+
+  bool _sameHeaders(Map<String, String> a, Map<String, String> b) {
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
   }
 
   /// 调一个 MCP 工具（供宿主工具分派用）。
