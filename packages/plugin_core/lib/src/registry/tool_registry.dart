@@ -164,6 +164,30 @@ class ToolRegistry {
     (_byPlugin[tool.pluginId] ??= <String>[]).add(tool.name);
   }
 
+  /// 注册一个**外部身份**（MCP server 等）的工具。
+  ///
+  /// 和 `registerHostTool` 并列：宿主是一个特殊来源，外部身份是另一类。
+  /// 不允许用 `__host__` —— 那会绕过宿主工具的断言。
+  ///
+  /// 重名直接抛错（同宿主工具）：外部工具名不受我们控制，静默改名
+  /// 会让"模型调的工具和实际执行的不是同一个"变成谜。
+  void registerExternalTool(RegisteredTool tool) {
+    if (tool.pluginId.isEmpty) {
+      throw ArgumentError.value(tool.pluginId, 'tool.pluginId', '外部工具必须有身份');
+    }
+    if (tool.pluginId == hostPluginId) {
+      throw ArgumentError.value(tool.pluginId, 'tool.pluginId',
+          '宿主工具请用 registerHostTool');
+    }
+    final existing = _tools[tool.name];
+    if (existing != null) {
+      throw ArgumentError.value(tool.name, 'tool.name',
+          '工具名已被 ${existing.pluginId} 占用');
+    }
+    _tools[tool.name] = tool;
+    (_byPlugin[tool.pluginId] ??= <String>[]).add(tool.name);
+  }
+
   /// 注销一个插件的全部工具。
   void unregisterPlugin(String pluginId) {
     final names = _byPlugin.remove(pluginId);

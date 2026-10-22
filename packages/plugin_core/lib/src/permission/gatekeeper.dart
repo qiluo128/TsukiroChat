@@ -277,6 +277,22 @@ class Gatekeeper {
     _granted[hostPluginId] = Set<String>.unmodifiable(declared);
   }
 
+  /// 登记一个**外部身份**（MCP server 等）。
+  ///
+  /// **不登记的话 `check` 会走 unknownPlugin → 工具全被拒。**
+  /// 这是 fail-closed 的正确表现，所以外部身份必须显式进场。
+  ///
+  /// 和 `registerHost` 的区别只是一个语义标签：外部身份的权限
+  /// 由调用方决定给多少（MCP 目前给空集合 = 无宿主能力，
+  /// 正好对应"我们不做 MCP 能力门禁"）。
+  void registerExternal(String identity, Set<String> declared) {
+    if (identity.isEmpty || identity == hostPluginId) {
+      throw ArgumentError.value(identity, 'identity', '外部身份不能为空或 __host__');
+    }
+    _declared[identity] = Set<String>.unmodifiable(declared);
+    _granted[identity] = Set<String>.unmodifiable(declared);
+  }
+
   /// 便捷方式：按原语名校验（内部查 [requiredPermissionFor]）。
   GateResult checkPrimitive(String pluginId, String primitive) =>
       check(pluginId, requiredPermissionFor(primitive));
