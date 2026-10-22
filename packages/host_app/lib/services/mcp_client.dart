@@ -252,7 +252,10 @@ class McpClient {
     final req = await client.postUrl(uri);
     req.followRedirects = false;
     req.headers.contentType = ContentType.json;
-    req.headers.set('Accept', 'application/json');
+    // **两种都要声明。** Streamable HTTP 的服务端按 Accept 决定回纯 JSON
+    // 还是 SSE 流；只写 application/json 会被判成不支持流式，
+    // 部分服务端直接拒绝。
+    req.headers.set('Accept', 'application/json, text/event-stream');
     for (final entry in headers.entries) {
       req.headers.set(entry.key, entry.value);
     }
@@ -285,12 +288,51 @@ class McpClient {
       return <String, dynamic>{};
     }
 
-    try {
-      final decoded = jsonDecode(text);
-      if (decoded is Map<String, dynamic>) return decoded;
-      throw McpException('MCP 响应不是 JSON 对象');
-    } on FormatException {
-      throw McpException('MCP 响应不是合法 JSON');
+    return _decodeBody(text);
+  }
+
+  /// 解析响应体。
+  ///
+  /// Streamable HTTP 允许两种：
+  ///   · `application/json` —— 直接一个 JSON 对象
+  ///   · `text/event-stream` —— SSE，若干 `data: {...}` 行
+  ///
+  /// **两种都要支持**：服务端可以按自己的判断在两者之间选，
+  /// 而客户端不能假设一定拿到哪一种。
+  Map<String, dynamic> _decodeBody(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return <String, dynamic>{};
+
+    // 纯 JSON
+    if (trimmed.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is Map<String, dynamic>) return decoded;
+        throw McpException('MCP 响应不是 JSON 对象');
+      } on FormatException {
+        throw McpException('MCP 响应不是合法 JSON');
+      }
     }
+
+    // SSE：取最后一个能解析的 data 行。
+    //
+    // 取最后一个而不是第一个：一次响应里可能有多个事件
+    // （比如进度通知 + 最终结果），我们要的是结果。
+    final lines = trimmed.split(RegExp(r'\r?\n'));
+    final dataLines = lines.where((l) => l.startsWith('data:')).toList();
+    if (dataLines.isEmpty) {
+      throw McpException('MCP 响应既不是 JSON 也不是 SSE：${trimmed.length > 120 ? trimmed.substring(0, 120) : trimmed}');
+    }
+    for (final line in dataLines.reversed) {
+      final payload = line.substring(5).trim();
+      if (payload.isEmpty || payload == '[DONE]') continue;
+      try {
+        final decoded = jsonDecode(payload);
+        if (decoded is Map<String, dynamic>) return decoded;
+      } catch (_) {
+        continue;
+      }
+    }
+    throw McpException('SSE 里没有可解析的 JSON 事件');
   }
 }

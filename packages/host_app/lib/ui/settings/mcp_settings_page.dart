@@ -56,13 +56,18 @@ const List<McpPreset> mcpPresets = <McpPreset>[
     verified: true,
   ),
   McpPreset(
-    name: '麦当劳 MCP 平台',
-    // 端点我没能确认 —— open.mcd.cn/mcp/doc 是 SPA，抓不到内容；
-    // GitHub 上的集成文档当时连不上。
-    // **不编造 URL**，让用户从官方文档里取。
-    url: null,
-    note: '端点需从官方文档获取后填入',
-    docUrl: 'https://open.mcd.cn/mcp/doc',
+    name: '麦当劳中国 MCP',
+    url: 'https://mcp.mcd.cn',
+    // 实测可达（无 token 时 HTTP 403）。
+    //
+    // 传输是 **Streamable HTTP** —— 客户端必须同时声明
+    // `application/json` 和 `text/event-stream`，我们的 client 已经支持。
+    //
+    // 错误响应**不是 JSON-RPC 格式**，是 `{"code","msg","data"}`，
+    // 所以 401/403/429 时要靠把 body 原文带出来才看得懂。
+    note: 'Streamable HTTP · 需 Bearer Token（open.mcd.cn/mcp 控制台获取）'
+        ' · 每分钟 600 次上限，超限 429',
+    docUrl: 'https://open.mcd.cn/mcp',
   ),
 ];
 
