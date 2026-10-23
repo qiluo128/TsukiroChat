@@ -197,6 +197,21 @@ class McpService {
   final Gatekeeper _gatekeeper;
 
   final Map<String, McpLive> _live = <String, McpLive>{};
+
+  /// 每个连接最近一次失败的原因。
+  ///
+  /// **原来 connect 外面是 `catch (_) {}`，失败全被吞掉。**
+  /// 表现是"AI 看不到工具"，而界面上一切正常 —— 无从排查。
+  /// 现在把原因留下来，设置页能显示。
+  final Map<String, String> _connectErrors = <String, String>{};
+
+  /// 记下某个连接的失败原因。调用方在 catch 里调。
+  void recordConnectError(String id, String message) {
+    _connectErrors[id] = message;
+  }
+
+  /// 某个连接最近一次的失败原因（成功时清空）。
+  String? connectErrorOf(String id) => _connectErrors[id];
   Map<String, McpLive> get live => Map<String, McpLive>.unmodifiable(_live);
 
   /// 连接并注册工具。失败抛 [McpException]，调用方决定怎么显示。
@@ -228,6 +243,7 @@ class McpService {
     }
 
     final live = McpLive(connection: c, client: client, tools: tools);
+    _connectErrors.remove(c.id);
     _live[c.id] = live;
     return live;
   }
@@ -339,11 +355,33 @@ class McpService {
   /// 加前缀是因为 MCP 的工具名不受我们控制，很容易和宿主工具
   /// 或别的 server 撞名（比如两个 server 都有 `search`）。
   String _toolName(McpConnection c, String tool) =>
-      'mcp__${_slug(c.name)}__${tool.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_')}';
+      'mcp__${_slug(c.name, c.id)}__${tool.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_')}';
 
-  String _slug(String s) {
-    final out = s.replaceAll(RegExp(r'[^A-Za-z0-9]'), '_');
-    return out.isEmpty ? 'server' : out;
+  /// 生成工具名前缀里的一段。
+  ///
+  /// **是"删掉非 ASCII"而不是"替换成下划线"。**
+  ///
+  /// 原来的写法把每个中文字符变成一个 `_`，于是连接名
+  /// 「麦当劳中国 MCP」会变成 `_____MCP`，工具名成了
+  /// `mcp______MCP__query_meals` —— 模型几乎不可能对上号。
+  /// 删掉之后是 `MCP`，可读性完全不同。
+  ///
+  /// 名字里一个 ASCII 字符都没有时，用 id 的短哈希兜底：
+  /// 稳定、唯一、不会退化成空串。
+  String _slug(String s, String id) {
+    final ascii = s.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    if (ascii.length >= 2) {
+      return ascii.length > 12 ? ascii.substring(0, 12) : ascii;
+    }
+    return _shortHash(id);
+  }
+
+  String _shortHash(String s) {
+    var h = 0;
+    for (final unit in s.codeUnits) {
+      h = (h * 31 + unit) & 0x7fffffff;
+    }
+    return h.toRadixString(36).padLeft(5, '0').substring(0, 5);
   }
 
   /// 从工具名反查 (连接 id, 原始工具名)。

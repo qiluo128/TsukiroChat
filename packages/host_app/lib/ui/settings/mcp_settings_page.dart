@@ -80,6 +80,9 @@ class McpSettingsPage extends ConsumerStatefulWidget {
 
 class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
   List<McpConnection> _connections = <McpConnection>[];
+
+  /// 连接失败原因（来自 McpService）。为空表示没失败过。
+  Map<String, String> _errors = <String, String>{};
   bool _loading = true;
   String? _error;
 
@@ -99,9 +102,19 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
     try {
       final store = await _store();
       final list = await store.load();
+      // 顺便把连接失败原因取出来 —— 它只存在 McpService 的内存里
+      final svc = ref.read(mcpServiceProvider).valueOrNull;
+      final errs = <String, String>{};
+      if (svc != null) {
+        for (final c in list) {
+          final e = svc.connectErrorOf(c.id);
+          if (e != null) errs[c.id] = e;
+        }
+      }
       if (!mounted) return;
       setState(() {
         _connections = list;
+        _errors = errs;
         _loading = false;
       });
     } catch (e) {
@@ -197,6 +210,16 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11.5, color: t.textMuted)),
+              if (_errors[c.id] != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '连接失败：' + _errors[c.id]!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: t.danger),
+                  ),
+                ),
               Text(
                 c.source == 'manual'
                     ? '手动添加'

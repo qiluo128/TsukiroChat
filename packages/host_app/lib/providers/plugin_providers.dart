@@ -304,8 +304,10 @@ final FutureProvider<PluginHost> pluginHostProvider = FutureProvider<PluginHost>
         if (!c.enabled) continue;
         try {
           await svc.connect(c);
-        } catch (_) {
-          // 单个失败不影响其它；用户可在设置页点「测试连接」看原文
+        } catch (e) {
+          // 单个失败不影响其它 —— 但要**记下来**。
+          // 原来这里是 catch (_) {}，于是"AI 看不到工具"而无从排查。
+          svc.recordConnectError(c.id, '$e');
         }
       }
     } catch (_) {
