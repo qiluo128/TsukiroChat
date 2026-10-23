@@ -28,6 +28,16 @@ enum TsukiroErrorCode {
   /// 分开处理：前者应该改参数，后者应该问用户或换名字。
   conflict,
 
+  /// 工作区里有**没被记录**的改动。
+  ///
+  /// 恢复历史版本前要比对"当前内容"和"最近记录"，不一致就说明
+  /// 有人在我们的版本库之外改了文件。这时恢复会**不可逆地**
+  /// 丢掉那些改动 —— 所以必须显式 force。
+  ///
+  /// 和 conflict 分开：conflict 是"目标已存在"（换个名字就好），
+  /// 这个是"你会丢数据"（必须确认）。
+  dirtyWorkspace,
+
   /// 磁盘或系统 IO 失败。
   ioError,
 
@@ -73,6 +83,8 @@ String errorCodeToString(TsukiroErrorCode code) {
       return 'PERMISSION_REVOKED';
     case TsukiroErrorCode.userCancelled:
       return 'USER_CANCELLED';
+    case TsukiroErrorCode.dirtyWorkspace:
+      return 'DIRTY_WORKSPACE';
     case TsukiroErrorCode.conflict:
       return 'CONFLICT';
     case TsukiroErrorCode.notFound:

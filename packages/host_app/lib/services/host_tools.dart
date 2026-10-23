@@ -175,6 +175,10 @@ _ToolSpec(
         'properties': <String, dynamic>{
           'path': <String, dynamic>{'type': 'string', 'description': '相对工作区根的文件路径'},
           'sha': <String, dynamic>{'type': 'string', 'description': 'list_versions 给出的 sha'},
+          'force': <String, dynamic>{
+            'type': 'boolean',
+            'description': '当前内容有未记录的改动时，是否强制覆盖（会丢数据）',
+          },
         },
         'required': <String>['path', 'sha'],
       },
@@ -278,7 +282,7 @@ case 'list_versions':
         if (sha == null || sha.isEmpty) {
           throw TsukiroException(TsukiroErrorCode.invalidArgs, '缺少 sha');
         }
-        await store.restore(agentId, path, sha);
+        await store.restore(agentId, path, sha, force: args['force'] == true);
         return <String, dynamic>{
           'path': path,
           'restored': sha,

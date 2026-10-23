@@ -23,16 +23,26 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:plugin_core/plugin_core.dart';
 
 import '../plugin/host_files_impl.dart';
+import 'package:crypto/crypto.dart';
+
 import 'workspace_versions.dart';
 
 class WorkspaceStore {
   WorkspaceStore._(this.root) : _files = const AppHostFiles();
+
+  /// 测试用：指定根目录，不走 path_provider。
+  ///
+  /// 生产路径依赖 `getApplicationDocumentsDirectory()`，
+  /// 而那是平台通道，单测里没有。
+  @visibleForTesting
+  WorkspaceStore.testAt(String root) : root = root, _files = const AppHostFiles();
 
   /// 写入计数器。每 200 次裁剪一次索引 ——
   /// 每次写都读一遍索引是 O(n)，5000 行会明显拖慢保存。
@@ -133,7 +143,26 @@ class WorkspaceStore {
   ///
   /// 恢复本身也会产生一条新版本（source: restore）——
   /// 否则"恢复"就变成了隐形的历史删除。
-  Future<void> restore(String agentId, String rel, String sha) async {
+  /// 回到某个历史版本。
+  ///
+  /// 恢复本身也会产生一条新版本（source: restore）——
+  /// 否则"恢复"就变成了隐形的历史删除。
+  ///
+  /// ## 两道保护
+  ///
+  /// **① 脏检查。** 恢复是**不可逆的覆盖**。如果当前内容和版本库里
+  /// 记的最新一版不一致，说明有人在我们的写入路径之外改了文件 ——
+  /// 这时恢复会**静默丢弃**那些改动。所以先比对，不一致就要求 force。
+  ///
+  /// **② 二进制保护。** 原来用 `utf8.decode(allowMalformed: true)`，
+  /// 那会把二进制内容**替换成替代字符**再写回去 —— 文件被静默损坏，
+  /// 而且看起来"恢复成功了"。现在明确拒绝。
+  Future<void> restore(
+    String agentId,
+    String rel,
+    String sha, {
+    bool force = false,
+  }) async {
     final versions = versionsFor(agentId);
     final bytes = await versions.getBlob(sha);
     if (bytes == null) {
@@ -143,8 +172,44 @@ class WorkspaceStore {
         details: <String, dynamic>{'sha': sha},
       );
     }
-    final text = utf8.decode(bytes, allowMalformed: true);
-    await _files.writeText(resolve(agentId, rel), text);
+
+    // ② 二进制保护：不做 allowMalformed 的"尽力解码"
+    final String text;
+    try {
+      text = utf8.decode(bytes);
+    } on FormatException {
+      throw TsukiroException(
+        TsukiroErrorCode.unsupported,
+        '这个版本不是文本内容，不能按文本恢复（强转会损坏文件）',
+        details: <String, dynamic>{'sha': sha},
+      );
+    }
+
+    final abs = resolve(agentId, rel);
+
+    // ① 脏检查
+    if (!force && await _files.exists(abs)) {
+      final history = await versions.history(rel);
+      final latestKnown = history.isEmpty ? null : history.first.sha;
+      if (latestKnown != null) {
+        final current = await _files.readBytes(abs);
+        final currentSha = sha256.convert(current).toString();
+        if (currentSha != latestKnown) {
+          throw TsukiroException(
+            TsukiroErrorCode.dirtyWorkspace,
+            '当前内容和历史记录的最新版本不一致 —— 有改动没被版本库记录。'
+            '恢复会丢掉那些改动。确定要覆盖请用 force: true。',
+            details: <String, dynamic>{
+              'path': rel,
+              'currentSha': currentSha,
+              'latestKnown': latestKnown,
+            },
+          );
+        }
+      }
+    }
+
+    await _files.writeText(abs, text);
     await versions.record(rel, sha, bytes: bytes.length, source: 'restore');
   }
 
