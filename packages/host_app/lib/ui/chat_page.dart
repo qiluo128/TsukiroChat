@@ -27,6 +27,11 @@ class ChatPage extends ConsumerStatefulWidget {
 
 class _ChatPageState extends ConsumerState<ChatPage> {
   final ScrollController _scroll = ScrollController();
+
+  /// 首次进入时是否已经定位到最新一条。
+  ///
+  /// 用字段而不是 setState：它只影响"要不要再滚"，不影响渲染。
+  bool _didInitialScroll = false;
   final TextEditingController _input = TextEditingController();
   final FocusNode _inputFocus = FocusNode();
 
@@ -89,6 +94,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         if (next.hasValue) _scrollToBottom();
       },
     );
+
+    // **进入对话时定位到最新一条。**
+    //
+    // 只靠上面那个 ref.listen 是不够的：它只在**值变化**时触发。
+    // 如果 provider 已经缓存好了（重进对话、或别处 watch 过），
+    // 初次进入不会触发，于是停在最顶上。
+    //
+    // 所以这里在 build 里检查"有数据了但还没定位过"就滚一次。
+    // 用 jump 不用 animate：初次进入从顶滚到底会晃一下，很难看。
+    if (messagesAsync.hasValue && !_didInitialScroll) {
+      _didInitialScroll = true;
+      _scrollToBottomInitial();
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -205,6 +223,27 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         SnackBar(content: Text(userFacingError(e)), duration: const Duration(seconds: 4)),
       );
     }
+  }
+
+  /// 初次进入时的定位。**jump，不 animate。**
+  ///
+  /// 列表可能还没 lay out 完（maxScrollExtent 还是 0），
+  /// 所以最多重试几帧 —— 比"偶发不滚"要稳。
+  void _scrollToBottomInitial([int attempt = 0]) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!_scroll.hasClients) {
+        if (attempt < 3) _scrollToBottomInitial(attempt + 1);
+        return;
+      }
+      final max = _scroll.position.maxScrollExtent;
+      // 还没量出高度 → 下一帧再试（但只试几次，避免空列表时一直排帧）
+      if (max <= 0 && attempt < 3) {
+        _scrollToBottomInitial(attempt + 1);
+        return;
+      }
+      _scroll.jumpTo(max);
+    });
   }
 
   void _scrollToBottom() {
