@@ -20,6 +20,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 /// 把可能出现在文本里的密钥擦掉。
 ///
 /// **这不是"美化错误"。** 我们的原则是错误原文照显示 ——
@@ -102,9 +104,26 @@ class McpServerInfo {
 /// 这里只取其中的文本部分 —— 图片和资源暂时不往模型传
 /// （桥接有 1MB 上限，而 base64 图片很容易超）。
 class McpCallResult {
-  const McpCallResult({required this.text, this.isError = false});
+  const McpCallResult({
+    required this.text,
+    this.json,
+    this.isError = false,
+  });
 
+  /// 原始文本（多个 content 项用换行拼接）。
   final String text;
+
+  /// **解包后的结构化结果。**
+  ///
+  /// 很多 MCP server 把工具结果塞在一个 JSON 字符串里：
+  ///   content: [{type: "text", text: "{\"ok\":true,...}"}]
+  /// 原样给模型的话，它拿到的是**字符串**，得自己再解析一次 ——
+  /// 而且字符串里的 isError 我们看不到，外层就报了 ok:true。
+  ///
+  /// 能整体解析成 JSON 时放这里；null 表示就是纯文本。
+  final Object? json;
+
+  /// MCP 层是否报错。**解包后会再看一次里面的 isError。**
   final bool isError;
 }
 
@@ -201,9 +220,49 @@ class McpClient {
         skipped++;
       }
     }
-    final text = parts.join('\n');
-    final suffix = skipped > 0 ? '\n\n（另有 $skipped 个非文本内容已省略）' : '';
-    return McpCallResult(text: text + suffix, isError: isError);
+    final joined = parts.join("\n");
+
+    // **单条文本、且整体是一个 JSON 对象 → 解包。**
+    //
+    // 这是 2.2 / 2.3 两个问题的同一个根因：
+    //   · 不解包 → 模型拿到字符串，要自己再解析（容易失败）
+    //   · 不解包 → 里面的 isError 看不到，外层报 ok:true（状态矛盾）
+    Object? parsed;
+    var isErrorOut = isError;
+    if (parts.length == 1) {
+      final candidate = tryParseJson(joined);
+      if (candidate is Map) {
+        parsed = candidate;
+        // 内层说错了就是错了 —— 外面的 ok 是协议层的，不是语义层的
+        if (candidate["isError"] == true) isErrorOut = true;
+      } else if (candidate != null) {
+        parsed = candidate;
+      }
+    }
+
+    final suffix = skipped > 0 ? "\n\n（另有 $skipped 个非文本内容已省略）" : "";
+    return McpCallResult(
+      text: joined + suffix,
+      json: parsed,
+      isError: isErrorOut,
+    );
+  }
+
+  /// 试着把一段文本解析成 JSON。失败返回 null（**不当错误**）。
+  ///
+  /// 只认对象和数组：数字/字符串/布尔解析出来也没意义，
+  /// 反而会把普通的 "123" 变成 int 让上游困惑。
+  @visibleForTesting
+  static Object? tryParseJson(String text) {
+    final t = text.trim();
+    if (t.isEmpty) return null;
+    if (!t.startsWith("{") && !t.startsWith("[")) return null;
+    try {
+      final v = jsonDecode(t);
+      return (v is Map || v is List) ? v : null;
+    } on FormatException {
+      return null;
+    }
   }
 
   // ─────────────────────── 传输 ───────────────────────

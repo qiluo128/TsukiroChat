@@ -359,9 +359,11 @@ class ChatController {
                 handler,
                 args,
               );
+              // 有结构化结果就给对象，模型不用自己再解析字符串。
+              final payload = r.json ?? r.text;
               return r.isError
                   ? ToolInvocationResult.failure('MCP_TOOL_ERROR', r.text)
-                  : ToolInvocationResult.ok(r.text);
+                  : ToolInvocationResult.ok(payload);
             } on McpException catch (e) {
               return ToolInvocationResult.failure('MCP_ERROR', e.message);
             } catch (e) {

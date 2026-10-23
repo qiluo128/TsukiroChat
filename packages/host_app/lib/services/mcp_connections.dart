@@ -293,10 +293,19 @@ class McpService {
       }
     }
 
-    // 插件没了 → 连接也删（只删插件带来的，手动加的不动）
+    // 插件真的不在了才删连接。
+    //
+    // **不能按 wanted 判断。** wanted 只包含"成功解析出 provides.mcp"的插件，
+    // 所以「插件还在但声明没解析出来」和「插件被卸载」会走同一条删除分支 ——
+    // 结果是重启后整组连接被误删。
+    //
+    // 用户实际遇到过：插件装着、MCP 服务列表里空空如也。
+    // 那是我把"我没看到声明"当成了"插件没了"。
+    final installedPluginIds = plugins.map((p) => p.id).toSet();
     for (final c in existing) {
       if (!c.source.startsWith('plugin:')) continue;
-      if (wanted.contains(c.id)) continue;
+      final ownerId = c.source.substring('plugin:'.length);
+      if (installedPluginIds.contains(ownerId)) continue;
       await _store.remove(c.id);
     }
   }
