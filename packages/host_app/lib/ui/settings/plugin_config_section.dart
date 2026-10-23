@@ -15,6 +15,8 @@
 /// **没声明配置的插件不显示入口** —— 一个空的设置页比没有更让人困惑。
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:plugin_core/plugin_core.dart';
 
@@ -95,6 +97,71 @@ class _PluginConfigPageState extends State<PluginConfigPage> {
 /// "标题在上、控件在下"结构），这样并排看过去是齐的。
 /// 之前用 SwitchListTile + 自己拼的 Slider 行，两者的内边距不同，
 /// 于是永远差几个像素。
+/// 文本配置项。
+///
+/// ## 为什么不能只用 onFieldSubmitted
+///
+/// 原来是 TextFormField(initialValue:, onFieldSubmitted: write) ——
+/// **只有按「完成/回车」才保存**。用户打完一个 token 直接返回，
+/// 值根本没进存储。
+///
+/// 真实现象：麦当劳 MCP 的 token 填了但没生效，请求里没有
+/// Authorization 头，服务端返回 403 —— 和完全没配 token 一模一样。
+///
+/// 所以改成：**输入时防抖保存 + 销毁时兜底保存**。
+///
+/// 用 controller 而不是 initialValue：宿主每次写配置都会 notifyListeners，
+/// 页面会重建；用 initialValue 的话每按一个键光标就跳回开头。
+class _ConfigTextField extends StatefulWidget {
+  const _ConfigTextField({required this.initial, required this.onWrite});
+
+  final String initial;
+  final Future<void> Function(Object?) onWrite;
+
+  @override
+  State<_ConfigTextField> createState() => _ConfigTextFieldState();
+}
+
+class _ConfigTextFieldState extends State<_ConfigTextField> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initial);
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    // **兜底：离开时把还没提交的写掉。**
+    //
+    // 防抖窗口是 400ms，用户完全可能在它触发前就返回了。
+    // 这一句是"值一定不会丢"的最后保证。
+    if (_controller.text != widget.initial) {
+      widget.onWrite(_controller.text);
+    }
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String v) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      widget.onWrite(v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: _controller,
+      decoration: const InputDecoration(isDense: true),
+      onChanged: _onChanged,
+      onFieldSubmitted: (v) {
+        _debounce?.cancel();
+        widget.onWrite(v);
+      },
+    );
+  }
+}
+
 class _ConfigFieldTile extends StatelessWidget {
   const _ConfigFieldTile({
     required this.plugin,
@@ -217,10 +284,9 @@ class _ConfigFieldTile extends StatelessWidget {
           if (field.type == 'text')
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: TextFormField(
-                initialValue: value?.toString() ?? '',
-                decoration: const InputDecoration(isDense: true),
-                onFieldSubmitted: write,
+              child: _ConfigTextField(
+                initial: value?.toString() ?? '',
+                onWrite: write,
               ),
             ),
 
