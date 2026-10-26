@@ -1,7 +1,7 @@
 name: tsukiro_chat
 description: "Tsukiro Chat 宿主 App"
 publish_to: 'none'
-version: 0.32.0+45
+version: 0.32.1+46
 
 environment:
   sdk: ^3.13.5

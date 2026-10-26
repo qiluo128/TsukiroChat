@@ -216,7 +216,10 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11.5, color: t.textMuted)),
-              if (_errors[c.id] != null)
+              // 有工具 = 连上了，这时历史错误不该再显示。
+              // 服务层已经保证 connectErrorOf 在已连上时返回 null，
+              // 这里再加一道 —— 界面不该依赖一个跨层的隐含约定。
+              if (_errors[c.id] != null && (_toolCounts[c.id] ?? 0) == 0)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(

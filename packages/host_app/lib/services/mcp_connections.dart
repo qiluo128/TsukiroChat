@@ -258,7 +258,17 @@ class McpService {
   int toolCountOf(String id) => _tools.toolNamesOf('mcp:$id').length;
 
   /// 某个连接最近一次的失败原因（成功时清空）。
-  String? connectErrorOf(String id) => _connectErrors[id];
+  /// 某个连接最近一次的失败原因。
+  ///
+  /// **已连上的连接不返回错误。**
+  ///
+  /// 否则界面会同时显示「连接失败：xxx」和「已连接 · 35 个工具」——
+  /// 因为错误是历史记录、状态是当前事实，两者不互斥地并排出现在
+  /// 一起时，用户只能得出"这系统在胡说"的结论。
+  String? connectErrorOf(String id) {
+    if (_live.containsKey(id)) return null;
+    return _connectErrors[id];
+  }
   Map<String, McpLive> get live => Map<String, McpLive>.unmodifiable(_live);
 
   /// 连接并注册工具。失败抛 [McpException]，调用方决定怎么显示。
