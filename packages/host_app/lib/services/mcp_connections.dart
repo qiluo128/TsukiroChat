@@ -210,6 +210,53 @@ class McpService {
     _connectErrors[id] = message;
   }
 
+  /// 确保所有启用的连接都连上了。**失败过的会重试。**
+  ///
+  /// ## 为什么需要它
+  ///
+  /// 启动时 `connect()` 只跑一次，失败就永远失败。而**应用刚启动时
+  /// 网络往往还没就绪** —— 于是那一次失败之后，整个会话的工具表是空的。
+  ///
+  /// 真实表现（用户报的）：
+  ///   · 刚开应用的一小段时间，测试连接失败；过一会儿就好了
+  ///   · 那段时间里 AI 看不到任何 MCP 工具
+  ///   · 而"新建智能体"会触发 provider 重建 → MCP 又跑一遍 → 这时候好了
+  ///     → 表现为"新智能体能看见、老的看不见"，其实是时间差异
+  ///
+  /// 所以每次真正要用工具之前（发消息前）都确认一遍。
+  ///
+  /// **冷却**：失败一次后 30 秒内不重试。否则每轮对话都对着一个
+  /// 必定失败的连接等满超时（10 秒），用户会觉得"发消息很卡"。
+  Future<void> ensureConnected() async {
+    final connections = await _store.load();
+    final now = DateTime.now();
+    for (final c in connections) {
+      if (!c.enabled) continue;
+      if (_live.containsKey(c.id)) continue;
+      final last = _lastAttempt[c.id];
+      if (last != null && now.difference(last) < retryCooldown) continue;
+      _lastAttempt[c.id] = now;
+      try {
+        await connect(c);
+      } catch (e) {
+        recordConnectError(c.id, '$e');
+      }
+    }
+  }
+
+  /// 每个连接上一次尝试连接的时间（用于冷却）。
+  final Map<String, DateTime> _lastAttempt = <String, DateTime>{};
+
+  /// 失败后多久才重试。
+  static const Duration retryCooldown = Duration(seconds: 30);
+
+  /// 这个连接**实际注册进工具表**的工具数。
+  ///
+  /// 这是判断"AI 能不能看到"的唯一直接证据：
+  ///   0  → 要么 connect 失败，要么连接被停用（根本没连）
+  ///   >0 → 工具在表里，模型说看不到那就是别的原因
+  int toolCountOf(String id) => _tools.toolNamesOf('mcp:$id').length;
+
   /// 某个连接最近一次的失败原因（成功时清空）。
   String? connectErrorOf(String id) => _connectErrors[id];
   Map<String, McpLive> get live => Map<String, McpLive>.unmodifiable(_live);

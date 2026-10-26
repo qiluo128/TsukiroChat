@@ -314,6 +314,18 @@ class ChatController {
       final pluginHost = _ref.read(pluginHostValueProvider);
 
 
+      // **发消息前确保 MCP 连上了。**
+      //
+      // 启动时那一次 connect 失败就没有重试了（网络往往还没就绪），
+      // 于是整个会话的工具表是空的 —— 表现就是"AI 说找不到工具"。
+      // 这里有冷却，失败过的连接 30 秒内不会重试，不会拖慢每轮。
+      try {
+        final mcp = await _ref.read(mcpServiceProvider.future);
+        await mcp.ensureConnected();
+      } catch (_) {
+        // MCP 起不来不该阻止这轮对话
+      }
+
       final loop = AgentLoop(
         gatekeeper: _ref.read(gatekeeperProvider),
         tools: _ref.read(toolRegistryProvider),

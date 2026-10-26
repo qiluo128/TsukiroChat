@@ -83,6 +83,9 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
 
   /// 连接失败原因（来自 McpService）。为空表示没失败过。
   Map<String, String> _errors = <String, String>{};
+
+  /// 每个连接实际注册的工具数（-1 = 拿不到 McpService）。
+  Map<String, int> _toolCounts = <String, int>{};
   bool _loading = true;
   String? _error;
 
@@ -105,16 +108,19 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
       // 顺便把连接失败原因取出来 —— 它只存在 McpService 的内存里
       final svc = ref.read(mcpServiceProvider).valueOrNull;
       final errs = <String, String>{};
+      final counts = <String, int>{};
       if (svc != null) {
         for (final c in list) {
           final e = svc.connectErrorOf(c.id);
           if (e != null) errs[c.id] = e;
+          counts[c.id] = svc.toolCountOf(c.id);
         }
       }
       if (!mounted) return;
       setState(() {
         _connections = list;
         _errors = errs;
+        _toolCounts = counts;
         _loading = false;
       });
     } catch (e) {
@@ -220,6 +226,15 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
                     style: TextStyle(fontSize: 11, color: t.danger),
                   ),
                 ),
+              // **状态说清楚。** 用户看到"测试连接通过"却"AI 看不到工具"，
+              // 唯一的原因是它根本没被连 —— 而界面上原来什么都不显示。
+              Text(
+                _stateText(c),
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: _stateColor(c, t),
+                ),
+              ),
               Text(
                 c.source == 'manual'
                     ? '手动添加'
@@ -240,6 +255,21 @@ class _McpSettingsPageState extends ConsumerState<McpSettingsPage> {
         );
       },
     );
+  }
+
+  String _stateText(McpConnection c) {
+    if (!c.enabled) return '已停用 —— 不会注册工具';
+    final n = _toolCounts[c.id];
+    if (n == null) return '状态未知';
+    if (n > 0) return '已连接 · $n 个工具';
+    return '未连接 —— 0 个工具（点「测试连接」看错误）';
+  }
+
+  Color _stateColor(McpConnection c, AppTokens t) {
+    if (!c.enabled) return t.textMuted;
+    final n = _toolCounts[c.id];
+    if (n != null && n > 0) return t.success;
+    return t.danger;
   }
 
   Future<void> _onAction(String action, McpConnection c) async {
