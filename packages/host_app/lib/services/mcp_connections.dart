@@ -22,7 +22,6 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
-import 'package:plugin_core/plugin_core.dart';
 
 import '../data/repositories.dart';
 import '../plugin/plugin_host.dart';

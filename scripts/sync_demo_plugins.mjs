@@ -32,7 +32,7 @@ const DEST = 'packages/host_app/assets/demo_plugins';
 const PUBSPEC = 'packages/host_app/pubspec.yaml';
 
 /** 只同步这些插件（全同步会让 APK 变大，而且不是每个都适合演示）。 */
-const INCLUDE = ['time-plugin', 'translate-button', 'sakura-theme', 'status-panel', 'mini-game', 'rock-paper-scissors', 'gift-case', 'mcd-mcp'];
+const INCLUDE = ['translate-button', 'sakura-theme', 'status-panel', 'mini-game', 'rock-paper-scissors', 'gift-case', 'mcd-mcp'];
 
 /** 仓库里有但这些没被同步 —— **必须喊出来**，不能静默跳过。 */
 function reportSkipped() {

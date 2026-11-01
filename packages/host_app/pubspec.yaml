@@ -1,7 +1,7 @@
 name: tsukiro_chat
 description: "Tsukiro Chat 宿主 App"
 publish_to: 'none'
-version: 0.32.1+46
+version: 0.33.0+47
 
 environment:
   sdk: ^3.13.5
@@ -62,9 +62,6 @@ flutter:
     # 插件运行时（JS 侧），创建插件 WebView 时注入
     - assets/plugin_runtime/
     # >>> demo_plugins (由 scripts/sync_demo_plugins.mjs 生成，勿手改)
-    - assets/demo_plugins/time-plugin/assets/
-    - assets/demo_plugins/time-plugin/handlers/
-    - assets/demo_plugins/time-plugin/
     - assets/demo_plugins/translate-button/assets/
     - assets/demo_plugins/translate-button/pages/
     - assets/demo_plugins/translate-button/

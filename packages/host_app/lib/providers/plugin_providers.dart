@@ -34,7 +34,6 @@ import 'app_providers.dart';
 ///
 /// 这是构建包中的完整演示集合；新增插件时同步提高 [demoTemplateSetVersion]。
 const List<String> demoTemplatePlugins = <String>[
-  'assets/demo_plugins/time-plugin',
   'assets/demo_plugins/translate-button',
   'assets/demo_plugins/sakura-theme',
   'assets/demo_plugins/status-panel',
@@ -44,7 +43,7 @@ const List<String> demoTemplatePlugins = <String>[
   'assets/demo_plugins/mcd-mcp',
 ];
 
-const int demoTemplateSetVersion = 3;
+const int demoTemplateSetVersion = 4;
 
 /// 原语注册表。
 ///

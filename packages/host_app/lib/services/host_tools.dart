@@ -29,6 +29,7 @@ class HostTools {
 
   /// 工具名 → handler 名。目前一一对应。
   static const List<String> names = <String>[
+    'get_current_time',
 'list_versions',
     'restore_version',
     'edit_file',
@@ -153,6 +154,18 @@ class HostTools {
       },
       permissions: <String>['fs.write'],
     ),
+    _ToolSpec(
+      name: 'get_current_time',
+      // **零权限。** 看个时间不该要用户批准任何东西，
+      // 也不该为此装一个插件。
+      description: '获取当前时间。返回本地时间、时区、星期几和时间戳。'
+          '用户问"现在几点"、"今天几号"、"星期几"时用这个。',
+      parameters: <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{},
+      },
+      permissions: <String>[],
+    ),
 _ToolSpec(
       name: 'list_versions',
       description: '看我工作区里某个文件的历史版本（新的在前）。'
@@ -258,6 +271,23 @@ _ToolSpec(
           source: 'edit',
         );
         return <String, dynamic>{'path': path, 'replaced': 1};
+
+      case 'get_current_time':
+        final now = DateTime.now();
+        final t = now.toLocal();
+        String two(int n) => n.toString().padLeft(2, '0');
+        const weekdays = <String>['一', '二', '三', '四', '五', '六', '日'];
+        final weekday = '星期' + weekdays[t.weekday - 1];
+        return <String, dynamic>{
+          'iso': t.toIso8601String(),
+          'timezone': t.timeZoneName,
+          'offsetMinutes': t.timeZoneOffset.inMinutes,
+          'epochMillis': now.millisecondsSinceEpoch,
+          'weekday': weekday,
+          // 给一句可直接用的自然语言，模型不必自己拼
+          'readable': '${t.year}年${t.month}月${t.day}日 '
+              '${two(t.hour)}:${two(t.minute)}:${two(t.second)} $weekday',
+        };
 
 case 'list_versions':
         final path = _requirePath(args);
