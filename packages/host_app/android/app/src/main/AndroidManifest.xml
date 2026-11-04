@@ -20,6 +20,10 @@
       不是必需的，但缺了它就只能笼统说「网络错误」。
     -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- 定位：宿主工具 get_location 与插件原语 location.get 共用。
+         实际使用前还要过两层：本应用的权限授予 + Android 运行时权限。 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 
     <application
         android:label="Tsukiro Chat"

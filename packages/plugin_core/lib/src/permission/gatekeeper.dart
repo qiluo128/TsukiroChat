@@ -147,6 +147,7 @@ class Gatekeeper {
   /// 插件卸载 / 停用。
   void unregisterPlugin(String pluginId) {
     _declared.remove(pluginId);
+    _alwaysAllowed.remove(pluginId);
     _granted.remove(pluginId);
   }
 
@@ -252,12 +253,44 @@ class Gatekeeper {
       return GateResult(GateDecision.notGranted, permission: permission);
     }
 
+    // **"始终允许此权限"的覆盖。**
+    //
+    // 注意：这是**对插件**的记忆，不是对智能体的。
+    // 信任是对代码的判断 —— 换一个智能体用同一个插件，跑的还是同一份代码，
+    // 所以这个决定不能按智能体分（见 docs/27 §5）。
+    if (spec.level == PermissionLevel.confirm &&
+        !(_alwaysAllowed[pluginId]?.contains(permission) ?? false)) {
+      return GateResult(GateDecision.confirmRequired, permission: permission);
+    }
+
     if (spec.level == PermissionLevel.confirm) {
       return GateResult(GateDecision.confirmRequired, permission: permission);
     }
 
     return GateResult.allow(permission);
   }
+
+  /// 每个插件被"始终允许"的 confirm 级权限。
+  final Map<String, Set<String>> _alwaysAllowed = <String, Set<String>>{};
+
+  /// 用户选了"始终允许此权限"。
+  ///
+  /// 只对 confirm 级有效 —— install 级本来就"始终允许"，
+  /// denied 级不允许覆盖（那是宿主保留）。
+  bool setAlwaysAllowed(String pluginId, String permission) {
+    final spec = lookupPermission(permission);
+    if (spec == null || spec.level != PermissionLevel.confirm) return false;
+    _alwaysAllowed.putIfAbsent(pluginId, () => <String>{}).add(permission);
+    return true;
+  }
+
+  /// 取消"始终允许"，回到每次询问。
+  void clearAlwaysAllowed(String pluginId, String permission) {
+    _alwaysAllowed[pluginId]?.remove(permission);
+  }
+
+  bool isAlwaysAllowed(String pluginId, String permission) =>
+      _alwaysAllowed[pluginId]?.contains(permission) ?? false;
 
   /// 登记宿主自己声明并持有的权限。
   ///
@@ -290,6 +323,7 @@ class Gatekeeper {
       throw ArgumentError.value(identity, 'identity', '外部身份不能为空或 __host__');
     }
     _declared[identity] = Set<String>.unmodifiable(declared);
+    _alwaysAllowed.putIfAbsent(identity, () => <String>{});
     _granted[identity] = Set<String>.unmodifiable(declared);
   }
 

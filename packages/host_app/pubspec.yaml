@@ -1,7 +1,7 @@
 name: tsukiro_chat
 description: "Tsukiro Chat 宿主 App"
 publish_to: 'none'
-version: 0.33.0+47
+version: 0.34.0+48
 
 environment:
   sdk: ^3.13.5
@@ -29,6 +29,7 @@ dependencies:
   path_provider: ^2.1.5
   # 换头像/换背景要能选图。系统相册选择器在 Android 13+ 不需要权限，
   # 低版本走 ACTION_GET_CONTENT 也不需要 —— 所以不动 AndroidManifest。
+  geolocator: ^13.0.2
   image_picker: ^1.1.2
   shared_preferences: ^2.3.3
 

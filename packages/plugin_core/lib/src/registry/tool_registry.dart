@@ -238,9 +238,19 @@ class ToolRegistry {
         continue;
       }
 
+      // **confirm 级也要可见。**
+      //
+      // 原来的判据是 `isAllowed`，而 confirmRequired 时 isAllowed 是 false ——
+      // 于是所有"每次询问"的工具会从表里**消失**：
+      // 用户永远看不到它，也永远不会被询问。
+      //
+      // 正确的判据是「拒绝才隐藏」：allow 和 confirmRequired 都算可见，
+      // 后者在真正调用时才弹确认框。
       var permissionOk = true;
       for (final perm in tool.permissions) {
-        if (!gatekeeper.check(tool.pluginId, perm).isAllowed) {
+        final gate = gatekeeper.check(tool.pluginId, perm);
+        if (gate.decision != GateDecision.allow &&
+            gate.decision != GateDecision.confirmRequired) {
           permissionOk = false;
           break;
         }
