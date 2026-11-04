@@ -34,6 +34,7 @@ const Map<String, PrimitiveHandler> demoPrimitiveHandlers = <String, PrimitiveHa
 
   // 自省：让插件发现有哪些工具可用（**含别的插件提供的**）
   'tool.list': handleToolList,
+  'location.get': handleLocationGet,
 
   'slot.list': handleSlotList,
 
@@ -503,6 +504,15 @@ Future<Object?> handleCapabilityInvoke(PrimitiveCall call) async {
   final request = CapabilityRequest.parse(call.args);
   final result = await caps.invoke(call.pluginId, request);
   return result.toJson();
+}
+
+/// `location.get` —— 插件问"我在哪"。
+///
+/// 权限门禁在调用之前就已经过了（`location` 是 confirm 级，
+/// 用户会被问一次）。这里只负责把宿主的读取结果原样返回。
+Future<Object?> handleLocationGet(PrimitiveCall call) async {
+  final loc = call.require<HostLocation>();
+  return await loc.current();
 }
 
 /// `tool.list` —— 插件问「有哪些工具可用」。

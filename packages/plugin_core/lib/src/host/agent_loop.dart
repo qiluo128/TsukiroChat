@@ -198,6 +198,7 @@ class AgentLoop {
     required this.hooks,
     required this.gateway,
     required this.invokeTool,
+    this.askConfirmation,
     this.persona = '你是一个有用、简洁的助手。',
     this.maxSteps = 8,
     this.contextAssembler,
@@ -212,6 +213,13 @@ class AgentLoop {
   final HookBus hooks;
   final ModelGateway gateway;
   final ToolInvoker invokeTool;
+
+  /// 遇到 confirm 级权限时弹确认框。返回 true = 允许这一次。
+  ///
+  /// **宿主不传就是拒绝**（fail-closed）。内核不能自己弹 UI ——
+  /// 它是纯 Dart，而弹框是 UI 的事。
+  final Future<bool> Function(String pluginId, String permission)?
+      askConfirmation;
   final AuditSink audit;
   final String persona;
 
@@ -515,6 +523,30 @@ class AgentLoop {
     // 权限：工具级权限也要过守门人。**调度与钩子都不构成绕过权限的通道。**
     for (final permission in tool.permissions) {
       final gate = gatekeeper.check(tool.pluginId, permission);
+      // **confirm 级要先问。**
+      //
+      // 原来这里只看 isAllowed，于是 confirmRequired 直接变成"未获得权限" ——
+      // 用户从来没被问过，只被告知失败。
+      if (gate.decision == GateDecision.confirmRequired) {
+        final ask = askConfirmation;
+        final allowed = ask == null
+            ? false
+            : await ask(tool.pluginId, permission);
+        if (!allowed) {
+          sw.stop();
+          return ToolInvocationRecord(
+            toolName: call.name,
+            pluginId: tool.pluginId,
+            ok: false,
+            durationMs: sw.elapsedMilliseconds,
+            errorCode: errorCodeToString(TsukiroErrorCode.userCancelled),
+            errorMessage: '用户拒绝了「$permission」权限',
+          );
+        }
+        // 用户允许了这一次，后面的权限继续判
+        continue;
+      }
+
       if (!gate.isAllowed) {
         sw.stop();
         return ToolInvocationRecord(

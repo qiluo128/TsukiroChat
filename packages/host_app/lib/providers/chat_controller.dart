@@ -14,6 +14,7 @@ import '../data/repositories.dart';
 import '../services/utility_model.dart';
 import '../services/agent_context.dart';
 import '../services/host_tools.dart';
+import '../services/location_and_confirm.dart';
 import '../services/mcp_client.dart';
 import '../services/mcp_connections.dart';
 import '../services/workspace_store.dart';
@@ -397,6 +398,31 @@ class ChatController {
           agent,
           conversationId: conversationId,
         ),
+        // **confirm 级权限的询问入口。**
+        //
+        // 不传就是拒绝（fail-closed）—— 内核不能自己弹 UI。
+        askConfirmation: (pluginId, permission) async {
+          final host = _ref.read(pluginHostValueProvider);
+          final name = pluginId == hostPluginId
+              ? '宿主'
+              : (host?.byId(pluginId)?.name ?? pluginId);
+          final reason = host
+              ?.byId(pluginId)
+              ?.manifest
+              .permissions
+              .where((p) => p.name == permission)
+              .map((p) => p.reason)
+              .firstOrNull;
+          final decision = await ConfirmationBroker(
+            _ref.read(gatekeeperProvider),
+          ).ask(
+            pluginId: pluginId,
+            permission: permission,
+            pluginName: name,
+            reason: reason,
+          );
+          return decision != ConfirmDecision.deny;
+        },
         maxSteps: 4,
         streamingCall: gateway.completeStreamingForLoop,
       );

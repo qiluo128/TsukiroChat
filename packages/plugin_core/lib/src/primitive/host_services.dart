@@ -30,6 +30,18 @@ abstract class HostClock {
 }
 
 /// 设备与系统信息。`sys.battery` / `sys.network` / `sys.device` / `sys.locale` 用。
+/// 设备定位。
+///
+/// 放在宿主服务里而不是在 plugin_core 里直接调用系统 API ——
+/// 内核是纯 Dart，不能依赖 geolocator（那是 Flutter 插件）。
+///
+/// **失败要抛异常并说明是哪一层被拒**：
+/// 应用内未授予 / 系统未授予 / 系统永久拒绝（需去设置手动开）。
+/// 三者对用户的意义完全不同，静默失败只会让模型反复重试。
+abstract class HostLocation {
+  Future<Map<String, dynamic>> current();
+}
+
 abstract class HostSystemInfo {
   Future<Map<String, dynamic>> battery();
   Future<Map<String, dynamic>> network();

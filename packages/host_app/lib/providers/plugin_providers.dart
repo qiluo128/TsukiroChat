@@ -24,6 +24,7 @@ import '../services/memory_providers.dart';
 import '../services/utility_model.dart';
 import '../plugin/host_files_impl.dart';
 import '../services/host_tools.dart';
+import '../services/location_and_confirm.dart';
 import '../services/mcp_connections.dart';
 import '../plugin/plugin_host.dart';
 import '../plugin/surface_controller.dart';

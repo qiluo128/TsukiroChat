@@ -22,6 +22,7 @@ import 'dart:convert';
 
 import 'package:plugin_core/plugin_core.dart';
 
+import 'location_and_confirm.dart';
 import 'workspace_store.dart';
 
 class HostTools {
@@ -30,6 +31,7 @@ class HostTools {
   /// 工具名 → handler 名。目前一一对应。
   static const List<String> names = <String>[
     'get_current_time',
+    'get_location',
 'list_versions',
     'restore_version',
     'edit_file',
@@ -44,7 +46,8 @@ class HostTools {
   /// `write_file` 要 `fs.write`，其余只要 `fs.read`。
   /// **列出来是为了让审计说得清"它凭什么能做这个"** ——
   /// 不是"宿主免检"。
-  static const Set<String> permissions = <String>{'fs.read', 'fs.write'};
+  static const Set<String> permissions =
+      <String>{'fs.read', 'fs.write', 'location'};
 
   /// 把这几个工具注册进工具表。**幂等** —— provider 重建时会再调。
   static void install({
@@ -153,6 +156,19 @@ class HostTools {
         'required': <String>['path'],
       },
       permissions: <String>['fs.write'],
+    ),
+    _ToolSpec(
+      name: 'get_location',
+      // `location` 在权限目录里是 **confirm 级** —— 每次调用都会问，
+      // 除非用户在弹窗里选了「始终允许此权限」。
+      description: '获取设备当前位置（经纬度 + 精度）。'
+          '需要定位权限，用户可能会被询问。'
+          '只想说个大概时不必调它，问"附近"可以先问用户在哪个城市。',
+      parameters: <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{},
+      },
+      permissions: <String>['location'],
     ),
     _ToolSpec(
       name: 'get_current_time',
@@ -271,6 +287,14 @@ _ToolSpec(
           source: 'edit',
         );
         return <String, dynamic>{'path': path, 'replaced': 1};
+
+      case 'get_location':
+        try {
+          return await readCurrentLocation();
+        } on LocationUnavailable catch (e) {
+          // 原文照传：三种失败对用户的意义完全不同
+          throw TsukiroException(TsukiroErrorCode.permissionDenied, e.message);
+        }
 
       case 'get_current_time':
         final now = DateTime.now();
