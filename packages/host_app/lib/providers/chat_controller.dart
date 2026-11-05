@@ -402,6 +402,9 @@ class ChatController {
         //
         // 不传就是拒绝（fail-closed）—— 内核不能自己弹 UI。
         askConfirmation: (pluginId, permission) async {
+          // **询问本身不许抛。** 抛了会穿出 AgentLoop，
+          // 而那条链路上没有任何地方接得住 —— 表现就是闪退。
+          try {
           final host = _ref.read(pluginHostValueProvider);
           final name = pluginId == hostPluginId
               ? '宿主'
@@ -421,7 +424,11 @@ class ChatController {
             pluginName: name,
             reason: reason,
           );
-          return decision != ConfirmDecision.deny;
+            return decision != ConfirmDecision.deny;
+          } catch (_) {
+            // 弹不出来就按拒绝处理（fail-closed）
+            return false;
+          }
         },
         maxSteps: 4,
         streamingCall: gateway.completeStreamingForLoop,

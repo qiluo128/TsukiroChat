@@ -289,11 +289,17 @@ _ToolSpec(
         return <String, dynamic>{'path': path, 'replaced': 1};
 
       case 'get_location':
+        // **不抛异常，返回结果对象。**
+        //
+        // 定位要过两层权限 + 一次系统调用，任何一步都可能抛
+        // （PlatformException / TimeoutException / 没 Activity…）。
+        // 抛出去会一路穿到 UI，最坏情况把宿主带崩；
+        // 变成返回值则是"模型看到一条错误、用户看到一句话"。
         try {
-          return await readCurrentLocation();
-        } on LocationUnavailable catch (e) {
-          // 原文照传：三种失败对用户的意义完全不同
-          throw TsukiroException(TsukiroErrorCode.permissionDenied, e.message);
+          final data = await readCurrentLocation();
+          return <String, dynamic>{'ok': true, ...data};
+        } catch (e) {
+          return <String, dynamic>{'ok': false, 'error': '$e'};
         }
 
       case 'get_current_time':

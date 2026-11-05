@@ -7,7 +7,7 @@
 /// 拆开写会让人漏掉第二层。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';\nimport 'package:flutter/scheduler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:plugin_core/plugin_core.dart';
 
@@ -34,6 +34,12 @@ class LocationUnavailable implements Exception {
 ///
 /// 混成一句"获取位置失败"，模型会反复重试，而用户看到的是"AI 很笨"。
 Future<Map<String, dynamic>> readCurrentLocation() async {
+  // **等一帧再碰原生。**
+  //
+  // 定位通常在"权限弹窗刚关闭"时被调用，而那一刻路由动画还在跑。
+  // geolocator 的 requestPermission 需要 Activity 处于稳定状态，
+  // 在转场中间调它会得到难以解释的失败（甚至原生崩溃）。
+  await SchedulerBinding.instance.endOfFrame;
   if (!await Geolocator.isLocationServiceEnabled()) {
     throw LocationUnavailable('设备的定位服务没有开启 —— 请打开系统定位开关');
   }
@@ -119,10 +125,14 @@ class ConfirmationBroker {
     // 直接用权限 id —— 它本身就是可读的（location / media.read…）
     final label = permission;
 
-    final result = await nav.push<ConfirmDecision>(
-      DialogRoute<ConfirmDecision>(
-        context: nav.context,
-        builder: (ctx) => AlertDialog(
+    // **用 showDialog，不自己 push DialogRoute。**
+    //
+    // showDialog 会做 InheritedTheme.capture() —— 手写的话对话框拿不到
+    // Theme / MaterialLocalizations，AlertDialog 内部会抛。
+    final result = await showDialog<ConfirmDecision>(
+      context: nav.context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
           title: Text('允许「$pluginName」$label？'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -157,7 +167,6 @@ class ConfirmationBroker {
             ),
           ],
         ),
-      ),
     );
 
     final decision = result ?? ConfirmDecision.deny;
