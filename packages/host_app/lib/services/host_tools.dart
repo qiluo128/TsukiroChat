@@ -60,7 +60,7 @@ class HostTools {
   /// 已排除：MainActivity 是标准 FlutterActivity（插件附着正常）。
   ///
   /// 重新开启的前提：拿到 logcat，确认是哪一行原生代码崩的。
-  static const bool locationEnabled = false;
+  static const bool locationEnabled = true;
 
   /// 把这几个工具注册进工具表。**幂等** —— provider 重建时会再调。
   static void install({
