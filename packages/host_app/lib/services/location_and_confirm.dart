@@ -46,17 +46,50 @@ Future<Map<String, dynamic>> readCurrentLocation() async {
     throw LocationUnavailable('设备的定位服务没有开启 —— 请打开系统定位开关');
   }
 
-  var permission = await Geolocator.checkPermission();
-  if (permission == LocationPermission.denied) {
-    permission = await Geolocator.requestPermission();
+  final permission = await Geolocator.checkPermission();
+
+  // ══════════════════════════════════════════════════════════════
+  // **不调用 requestPermission()。**
+  //
+  // 真机是华为 HarmonyOS（AOSP 兼容层，不是纯安卓）。它的系统权限
+  // 控制器换成了华为自己的实现，插件通过 Android 的
+  // requestPermissions 请求时会在原生层崩溃 —— 表现是选完我们的
+  // 授权弹窗后应用闪退，而且**系统权限弹窗从未出现**（崩在拉起之前）。
+  //
+  // 佐证：同样的代码在 AOSP 模拟器（Android 15）上完整跑通，
+  // 日志里能看到 GrantPermissionsActivity 正常拉起。
+  //
+  // 所以改走"引导用户去系统设置"这条不碰原生请求的路径。
+  // 代价是用户要多点两下；换来的是**不会崩**。
+  //
+  // 如果将来确认某个 ROM 上 requestPermission 是安全的，
+  // 把下面这个开关打开即可 —— 但必须先在真机上验证过。
+  // ══════════════════════════════════════════════════════════════
+  const bool requestPermissionInApp = false;
+
+  if (requestPermissionInApp && permission == LocationPermission.denied) {
+    final granted = await Geolocator.requestPermission();
+    if (granted == LocationPermission.whileInUse ||
+        granted == LocationPermission.always) {
+      return _positionOf();
+    }
   }
-  if (permission == LocationPermission.denied) {
-    throw LocationUnavailable('你拒绝了系统定位权限 —— 再试一次会重新弹窗');
-  }
-  if (permission == LocationPermission.deniedForever) {
+
+  if (permission == LocationPermission.denied ||
+      permission == LocationPermission.deniedForever) {
     throw LocationUnavailable(
-        '系统定位权限被永久拒绝 —— 需要去系统设置里手动为本应用开启');
+        '还没有定位权限。请到 系统设置 → 应用 → Tsukiro Chat → 权限 → 位置 '
+        '里选「使用期间允许」，然后回到这里再试一次。');
   }
+
+  return _positionOf();
+}
+
+/// 真正去读坐标。
+///
+/// 单独拆出来：权限检查和读取要能分开测试，而且读取超时属于
+/// "可以重试"的失败，跟"没权限"不是一回事。
+Future<Map<String, dynamic>> _positionOf() async {
 
   final pos = await Geolocator.getCurrentPosition(
     locationSettings: const LocationSettings(
