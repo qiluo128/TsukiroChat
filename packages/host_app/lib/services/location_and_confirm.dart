@@ -2,12 +2,13 @@
 ///
 /// ## 两件事放在一个文件的原因
 ///
-/// 它们都是"系统工具在调用前需要用户同意"这条链路上的一环：
+/// 它们都是「系统工具在调用前需要用户同意」这条链路上的一环：
 /// 定位要先问应用内权限（我们的体系），再问系统权限（Android 弹窗）。
 /// 拆开写会让人漏掉第二层。
 library;
 
-import 'package:flutter/material.dart';\nimport 'package:flutter/scheduler.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:plugin_core/plugin_core.dart';
 
@@ -32,14 +33,15 @@ class LocationUnavailable implements Exception {
 /// | 系统权限被拒（还能再问） | 再点一次会重新弹窗 |
 /// | 系统权限永久拒绝 | 只能去设置里手动开 |
 ///
-/// 混成一句"获取位置失败"，模型会反复重试，而用户看到的是"AI 很笨"。
+/// 混成一句「获取位置失败」，模型会反复重试，而用户看到的是「AI 很笨」。
 Future<Map<String, dynamic>> readCurrentLocation() async {
   // **等一帧再碰原生。**
   //
-  // 定位通常在"权限弹窗刚关闭"时被调用，而那一刻路由动画还在跑。
+  // 定位通常在「权限弹窗刚关闭」时被调用，而那一刻路由动画还在跑。
   // geolocator 的 requestPermission 需要 Activity 处于稳定状态，
   // 在转场中间调它会得到难以解释的失败（甚至原生崩溃）。
   await SchedulerBinding.instance.endOfFrame;
+
   if (!await Geolocator.isLocationServiceEnabled()) {
     throw LocationUnavailable('设备的定位服务没有开启 —— 请打开系统定位开关');
   }
@@ -88,9 +90,6 @@ class AppHostLocation implements HostLocation {
 
 // ═══════════════════════ 权限询问 ═══════════════════════
 
-// appNavigatorKey 来自 plugin/app_keys.dart —— 那里已经有一个，
-// 而且 MaterialApp 已经接上了它。重复定义会让 app.dart 出现二义导入。
-
 enum ConfirmDecision {
   /// 只允许这一次。
   allowOnce,
@@ -133,40 +132,39 @@ class ConfirmationBroker {
       context: nav.context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-          title: Text('允许「$pluginName」$label？'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(label),
-              if ((reason ?? '').isNotEmpty) ...<Widget>[
-                const SizedBox(height: 8),
-                Text('申请理由：$reason',
-                    style: const TextStyle(fontSize: 12)),
-              ],
-              const SizedBox(height: 12),
-              const Text(
-                '「始终允许」会记住这个决定，以后这个插件不再询问。\n'
-                '它只针对这个插件，不区分智能体。',
-                style: TextStyle(fontSize: 11.5),
-              ),
+        title: Text('允许「$pluginName」$label？'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(label),
+            if ((reason ?? '').isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
+              Text('申请理由：$reason', style: const TextStyle(fontSize: 12)),
             ],
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, ConfirmDecision.deny),
-              child: const Text('拒绝'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, ConfirmDecision.allowOnce),
-              child: const Text('允许一次'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, ConfirmDecision.allowAlways),
-              child: const Text('始终允许此权限'),
+            const SizedBox(height: 12),
+            const Text(
+              '「始终允许」会记住这个决定，以后这个插件不再询问。\n'
+              '它只针对这个插件，不区分智能体。',
+              style: TextStyle(fontSize: 11.5),
             ),
           ],
         ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ConfirmDecision.deny),
+            child: const Text('拒绝'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ConfirmDecision.allowOnce),
+            child: const Text('允许一次'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ConfirmDecision.allowAlways),
+            child: const Text('始终允许此权限'),
+          ),
+        ],
+      ),
     );
 
     final decision = result ?? ConfirmDecision.deny;
