@@ -49,6 +49,19 @@ class HostTools {
   static const Set<String> permissions =
       <String>{'fs.read', 'fs.write', 'location'};
 
+  /// 定位是否启用。
+  ///
+  /// **暂时关闭。** geolocator 在真机上会导致应用闪退（原生崩溃，
+  /// Dart 层已经全部包了 try/catch 仍然崩），而没有 logcat 无法定位原因。
+  ///
+  /// 关键线索：**选完"允许一次"后系统权限弹窗从未出现** —— 说明崩溃发生在
+  /// `requestPermission()` 前后，而不是之后。
+  ///
+  /// 已排除：MainActivity 是标准 FlutterActivity（插件附着正常）。
+  ///
+  /// 重新开启的前提：拿到 logcat，确认是哪一行原生代码崩的。
+  static const bool locationEnabled = false;
+
   /// 把这几个工具注册进工具表。**幂等** —— provider 重建时会再调。
   static void install({
     required ToolRegistry registry,
@@ -289,6 +302,15 @@ _ToolSpec(
         return <String, dynamic>{'path': path, 'replaced': 1};
 
       case 'get_location':
+        if (!locationEnabled) {
+          // 仍然走完了权限询问（工具声明了 location 权限），
+          // 只是不碰原生 —— 这样应用不崩，询问流程也还能验证。
+          return <String, dynamic>{
+            'ok': false,
+            'error': '定位功能暂时下线：geolocator 在真机上会闪退，正在排查。'
+                '其余功能不受影响。',
+          };
+        }
         // **不抛异常，返回结果对象。**
         //
         // 定位要过两层权限 + 一次系统调用，任何一步都可能抛
