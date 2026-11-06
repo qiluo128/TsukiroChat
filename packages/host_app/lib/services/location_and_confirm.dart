@@ -34,19 +34,25 @@ class LocationUnavailable implements Exception {
 /// | 系统权限永久拒绝 | 只能去设置里手动开 |
 ///
 /// 混成一句「获取位置失败」，模型会反复重试，而用户看到的是「AI 很笨」。
-Future<Map<String, dynamic>> readCurrentLocation() async {
+Future<Map<String, dynamic>> readCurrentLocation({
+  Future<void> Function(String)? trace,
+}) async {
+  Future<void> mark(String s) async => trace == null ? null : trace(s);
   // **等一帧再碰原生。**
   //
   // 定位通常在「权限弹窗刚关闭」时被调用，而那一刻路由动画还在跑。
   // geolocator 的 requestPermission 需要 Activity 处于稳定状态，
   // 在转场中间调它会得到难以解释的失败（甚至原生崩溃）。
-  await SchedulerBinding.instance.endOfFrame;
+  await mark('2. endOfFrame 完成');
 
+  await mark('3. 检查定位服务开关');
   if (!await Geolocator.isLocationServiceEnabled()) {
     throw LocationUnavailable('设备的定位服务没有开启 —— 请打开系统定位开关');
   }
 
+  await mark('4. 检查权限');
   final permission = await Geolocator.checkPermission();
+  await mark('4b. 权限 = $permission');
 
   // ══════════════════════════════════════════════════════════════
   // **不调用 requestPermission()。**
@@ -71,7 +77,8 @@ Future<Map<String, dynamic>> readCurrentLocation() async {
     final granted = await Geolocator.requestPermission();
     if (granted == LocationPermission.whileInUse ||
         granted == LocationPermission.always) {
-      return _positionOf();
+      await mark('6. 读取坐标（forceLocationManager）');
+  return _positionOf();
     }
   }
 
@@ -91,10 +98,19 @@ Future<Map<String, dynamic>> readCurrentLocation() async {
 /// "可以重试"的失败，跟"没权限"不是一回事。
 Future<Map<String, dynamic>> _positionOf() async {
 
+  // **forceLocationManager: 绕开 Google Play 服务。**
+  //
+  // geolocator 在 Android 上默认先走 FusedLocationProviderClient ——
+  // 那是 Google Play 服务的一部分。鸿蒙设备（以及所有没有 GMS 的
+  // 国行机）上没有它，这条路径会直接崩在原生层。
+  //
+  // 强制用老的 LocationManager 就绕开了 GMS，代价是精度略低、
+  // 耗电略高 —— 对我们这个用途完全可接受。
   final pos = await Geolocator.getCurrentPosition(
-    locationSettings: const LocationSettings(
+    locationSettings: AndroidSettings(
       accuracy: LocationAccuracy.medium,
       timeLimit: Duration(seconds: 15),
+      forceLocationManager: true,
     ),
   );
 

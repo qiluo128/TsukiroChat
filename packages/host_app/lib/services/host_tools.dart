@@ -302,6 +302,26 @@ _ToolSpec(
         return <String, dynamic>{'path': path, 'replaced': 1};
 
       case 'get_location':
+        // **面包屑。**
+        //
+        // 原生崩溃没法用 try/catch 接住，也就没法知道崩在哪一步。
+        // 所以每一步之前先把它写进工作区文件 —— 崩了之后打开
+        // 工作区里的「诊断-定位.log」就能看到最后执行到哪。
+        //
+        // 写进工作区而不是别的目录：应用里自带文件浏览器，
+        // 用户不用连电脑、不用装别的工具就能看到。
+        const diagPath = '诊断-定位.log';
+        final trace = <String>[];
+        Future<void> step(String s) async {
+          trace.add(s);
+          try {
+            await store.writeText(agentId, diagPath, trace.join('\n'),
+                source: 'diagnostic');
+          } catch (_) {
+            // 写日志失败不该影响功能
+          }
+        }
+
         if (!locationEnabled) {
           // 仍然走完了权限询问（工具声明了 location 权限），
           // 只是不碰原生 —— 这样应用不崩，询问流程也还能验证。
@@ -312,15 +332,13 @@ _ToolSpec(
           };
         }
         // **不抛异常，返回结果对象。**
-        //
-        // 定位要过两层权限 + 一次系统调用，任何一步都可能抛
-        // （PlatformException / TimeoutException / 没 Activity…）。
-        // 抛出去会一路穿到 UI，最坏情况把宿主带崩；
-        // 变成返回值则是"模型看到一条错误、用户看到一句话"。
         try {
-          final data = await readCurrentLocation();
+          await step('1. 开始');
+          final data = await readCurrentLocation(trace: step);
+          await step('5. 完成：$data');
           return <String, dynamic>{'ok': true, ...data};
         } catch (e) {
+          await step('X. 失败: $e');
           return <String, dynamic>{'ok': false, 'error': '$e'};
         }
 
