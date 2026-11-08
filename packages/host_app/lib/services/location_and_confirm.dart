@@ -7,6 +7,8 @@
 /// 拆开写会让人漏掉第二层。
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:geolocator/geolocator.dart';
@@ -38,90 +40,63 @@ Future<Map<String, dynamic>> readCurrentLocation({
   Future<void> Function(String)? trace,
 }) async {
   Future<void> mark(String s) async => trace == null ? null : trace(s);
-  // **等一帧再碰原生。**
-  //
-  // 定位通常在「权限弹窗刚关闭」时被调用，而那一刻路由动画还在跑。
-  // geolocator 的 requestPermission 需要 Activity 处于稳定状态，
-  // 在转场中间调它会得到难以解释的失败（甚至原生崩溃）。
+
+  await SchedulerBinding.instance.endOfFrame;
   await mark('2. endOfFrame 完成');
 
-  await mark('3. 检查定位服务开关');
-  if (!await Geolocator.isLocationServiceEnabled()) {
-    throw LocationUnavailable('设备的定位服务没有开启 —— 请打开系统定位开关');
-  }
-
-  await mark('4. 检查权限');
-  final permission = await Geolocator.checkPermission();
-  await mark('4b. 权限 = $permission');
-
   // ══════════════════════════════════════════════════════════════
-  // **不调用 requestPermission()。**
+  // **不预检，直接读。**
   //
-  // 真机是华为 HarmonyOS（AOSP 兼容层，不是纯安卓）。它的系统权限
-  // 控制器换成了华为自己的实现，插件通过 Android 的
-  // requestPermissions 请求时会在原生层崩溃 —— 表现是选完我们的
-  // 授权弹窗后应用闪退，而且**系统权限弹窗从未出现**（崩在拉起之前）。
+  // 原来的顺序是「查定位开关 → 查权限 → 读坐标」，但鸿蒙的兼容层上
+  // 这两个查询本身就不可信：可能返回 denied / 未开启，而实际上
+  // 系统里是允许的。于是我们会在**真正读之前**就放弃，用户看到的是
+  // "没有权限"，去设置里却又明明有。
   //
-  // 佐证：同样的代码在 AOSP 模拟器（Android 15）上完整跑通，
-  // 日志里能看到 GrantPermissionsActivity 正常拉起。
-  //
-  // 所以改走"引导用户去系统设置"这条不碰原生请求的路径。
-  // 代价是用户要多点两下；换来的是**不会崩**。
-  //
-  // 如果将来确认某个 ROM 上 requestPermission 是安全的，
-  // 把下面这个开关打开即可 —— 但必须先在真机上验证过。
+  // 改成直接尝试读取，用异常区分原因 —— 三种情况本来就应该说不同的话：
+  //   没有权限       → 引导去系统设置
+  //   超时           → 室内/信号弱，靠近窗户重试
+  //   其它           → 原文透出
   // ══════════════════════════════════════════════════════════════
-  const bool requestPermissionInApp = false;
 
-  if (requestPermissionInApp && permission == LocationPermission.denied) {
-    final granted = await Geolocator.requestPermission();
-    if (granted == LocationPermission.whileInUse ||
-        granted == LocationPermission.always) {
-      await mark('6. 读取坐标（forceLocationManager）');
-  return _positionOf();
-    }
-  }
-
-  if (permission == LocationPermission.denied ||
-      permission == LocationPermission.deniedForever) {
+  try {
+    await mark('3. 调用 getCurrentPosition');
+    final pos = await Geolocator.getCurrentPosition(
+      locationSettings: AndroidSettings(
+        accuracy: LocationAccuracy.medium,
+        // **绕开 Google Play 服务。** geolocator 默认走
+        // FusedLocationProviderClient —— 那是 GMS 的一部分。
+        // 鸿蒙和所有没有 GMS 的国行机都没有它，这条路径会崩在原生层。
+        forceLocationManager: true,
+        timeLimit: const Duration(seconds: 20),
+      ),
+    );
+    await mark('4. 成功');
+    return <String, dynamic>{
+      'latitude': pos.latitude,
+      'longitude': pos.longitude,
+      'accuracyMeters': pos.accuracy,
+      'altitude': pos.altitude,
+      'timestamp': pos.timestamp.toIso8601String(),
+    };
+  } on TimeoutException {
+    await mark('X. 超时');
     throw LocationUnavailable(
-        '还没有定位权限。请到 系统设置 → 应用 → Tsukiro Chat → 权限 → 位置 '
-        '里选「使用期间允许」，然后回到这里再试一次。');
+        '定位超时（20 秒）。室内的 GPS 经常收不到信号 —— 靠近窗户或到户外再试。');
+  } catch (e) {
+    await mark('X. 失败: $e');
+    final text = '$e';
+    // 权限类失败才引导去设置
+    if (text.contains('PERMISSION_DENIED') ||
+        text.contains('permission') ||
+        text.contains('Permission')) {
+      throw LocationUnavailable(
+        '定位权限被拒绝。请到 系统设置 → 应用 → Tsukiro Chat → 权限 → 位置 '
+        '里选「使用期间允许」，然后回来再试。\n（原始错误：$text）');
+    }
+    throw LocationUnavailable('读取位置失败：$text');
   }
-
-  return _positionOf();
 }
 
-/// 真正去读坐标。
-///
-/// 单独拆出来：权限检查和读取要能分开测试，而且读取超时属于
-/// "可以重试"的失败，跟"没权限"不是一回事。
-Future<Map<String, dynamic>> _positionOf() async {
-
-  // **forceLocationManager: 绕开 Google Play 服务。**
-  //
-  // geolocator 在 Android 上默认先走 FusedLocationProviderClient ——
-  // 那是 Google Play 服务的一部分。鸿蒙设备（以及所有没有 GMS 的
-  // 国行机）上没有它，这条路径会直接崩在原生层。
-  //
-  // 强制用老的 LocationManager 就绕开了 GMS，代价是精度略低、
-  // 耗电略高 —— 对我们这个用途完全可接受。
-  final pos = await Geolocator.getCurrentPosition(
-    locationSettings: AndroidSettings(
-      accuracy: LocationAccuracy.medium,
-      timeLimit: Duration(seconds: 15),
-      forceLocationManager: true,
-    ),
-  );
-
-  return <String, dynamic>{
-    'latitude': pos.latitude,
-    'longitude': pos.longitude,
-    'accuracyMeters': pos.accuracy,
-    'altitude': pos.altitude,
-    'timestamp': pos.timestamp.toIso8601String(),
-  };
-}
 
 /// 给插件原语用的 `HostLocation` 实现。
 class AppHostLocation implements HostLocation {
