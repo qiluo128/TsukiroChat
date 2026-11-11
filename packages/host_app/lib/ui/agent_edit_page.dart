@@ -249,24 +249,29 @@ class _AgentEditPageState extends ConsumerState<AgentEditPage> {
               ),
               const SizedBox(height: 8),
               _SectionTitle('工具'),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('这个智能体能用的工具'),
-              subtitle: Text(
-                // 这一页的意义：开关的后果是"进上下文"，不是"装了/没装"。
-                // 用户看得到数字，才能判断上下文预算被吃掉多少。
-                '按插件分组，可以单独关掉某些工具。',
-                style: TextStyle(fontSize: 12, color: t.textMuted),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => AgentToolsPage(agentId: agent.id),
+              // **对齐靠的是"和上面的模型那一项用同一套 ListTile 默认值"。**
+              //
+              // 第一版我给它加了 `contentPadding: EdgeInsets.zero` 并省掉了
+              // leading 图标 —— 于是左边距和文字起点都和「模型」那一行对不齐，
+              // 看上去像嵌到了外面一层。
+              ListTile(
+                leading: const Icon(Icons.extension_outlined),
+                title: const Text('这个智能体能用的工具'),
+                subtitle: Text(
+                  // 开关的后果是"进不进上下文"，不是"装了/没装"。
+                  '按插件分组，可以单独关掉某些工具。',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AgentToolsPage(agentId: agent.id),
+                  ),
                 ),
               ),
-            ),
 
-            _SectionTitle('记忆'),
+              const SizedBox(height: 8),
+              _SectionTitle('记忆'),
               SwitchListTile(
                 value: agent.memory.enabled,
                 onChanged: (v) => _setMemory(agent, agent.memory.copyWithEnabled(v)),
