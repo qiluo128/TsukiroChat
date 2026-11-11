@@ -11,6 +11,7 @@ import '../data/models.dart';
 import '../providers/app_providers.dart';
 import '../providers/plugin_providers.dart';
 import 'agent_avatar.dart';
+import 'agent_tools_page.dart';
 import 'appearance_pickers.dart';
 import 'plugin_slot.dart';
 import '../theme/app_theme.dart';
@@ -247,7 +248,25 @@ class _AgentEditPageState extends ConsumerState<AgentEditPage> {
                 ),
               ),
               const SizedBox(height: 8),
-              _SectionTitle('记忆'),
+              _SectionTitle('工具'),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('这个智能体能用的工具'),
+              subtitle: Text(
+                // 这一页的意义：开关的后果是"进上下文"，不是"装了/没装"。
+                // 用户看得到数字，才能判断上下文预算被吃掉多少。
+                '按插件分组，可以单独关掉某些工具。',
+                style: TextStyle(fontSize: 12, color: t.textMuted),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => AgentToolsPage(agentId: agent.id),
+                ),
+              ),
+            ),
+
+            _SectionTitle('记忆'),
               SwitchListTile(
                 value: agent.memory.enabled,
                 onChanged: (v) => _setMemory(agent, agent.memory.copyWithEnabled(v)),

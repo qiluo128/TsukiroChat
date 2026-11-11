@@ -199,6 +199,7 @@ class AgentLoop {
     required this.gateway,
     required this.invokeTool,
     this.askConfirmation,
+    this.userToggles,
     this.persona = '你是一个有用、简洁的助手。',
     this.maxSteps = 8,
     this.contextAssembler,
@@ -220,6 +221,12 @@ class AgentLoop {
   /// 它是纯 Dart，而弹框是 UI 的事。
   final Future<bool> Function(String pluginId, String permission)?
       askConfirmation;
+
+  /// 用户在「智能体 · 工具」页关掉的工具（name → false）。
+  ///
+  /// 直接吃 [ToolRegistry.toOpenAiTools] 的 userToggles —— 那一层
+  /// 本来就有这个过滤，不用新写一条路径。
+  final Map<String, bool>? userToggles;
   final AuditSink audit;
   final String persona;
 
@@ -366,7 +373,7 @@ class AgentLoop {
     final visibleTools = tools.toOpenAiTools(
       gatekeeper: gatekeeper,
       skillAllowList: null,
-      userToggles: null,
+      userToggles: userToggles,
     );
 
     // **宿主自己的模型调用也要写审计。**

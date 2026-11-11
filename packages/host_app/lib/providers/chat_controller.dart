@@ -5,6 +5,8 @@
 /// 只是 `tools` / `gatekeeper` 里开始有东西。
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:plugin_core/plugin_core.dart';
@@ -327,6 +329,27 @@ class ChatController {
         // MCP 起不来不该阻止这轮对话
       }
 
+      // **这个智能体关掉了哪些工具。**
+      //
+      // 直接吃 AgentLoop 的 userToggles —— ToolRegistry.visibleTools
+      // 本来就有这个过滤，不新写一条路径。
+      //
+      // 读失败就当没关过（少一层拦截，但不至于让对话起不来）。
+      Map<String, bool>? agentToolToggles;
+      try {
+        final repos = await _ref.read(reposProvider.future);
+        final raw = await repos.settings
+            .get('agent.toolExcludes.${agent.id}');
+        if (raw != null) {
+          final names = (jsonDecode(raw) as List).cast<String>();
+          agentToolToggles = <String, bool>{
+            for (final n in names) n: false,
+          };
+        }
+      } catch (_) {
+        // 忽略
+      }
+
       final loop = AgentLoop(
         gatekeeper: _ref.read(gatekeeperProvider),
         tools: _ref.read(toolRegistryProvider),
@@ -430,6 +453,7 @@ class ChatController {
             return false;
           }
         },
+        userToggles: agentToolToggles,
         maxSteps: 4,
         streamingCall: gateway.completeStreamingForLoop,
       );
